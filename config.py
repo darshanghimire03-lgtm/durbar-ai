@@ -30,16 +30,15 @@ def _int_env(name: str, default: int) -> int:
 
 
 SERVICE_NAME = "Durbar AI"
-VERSION = "0.3"
+VERSION = "0.4"
 
 FIREBASE_DATABASE_URL = os.getenv("FIREBASE_DATABASE_URL", "").strip()
 
 CALENDAR_PATH = "calendar"
 UNITS_PATH = "units"
+USERS_PATH = os.getenv("USERS_PATH", "users").strip().strip("/")
 
 CACHE_TTL_SECONDS = _int_env("CACHE_TTL_SECONDS", 60)
-MEMORY_TTL_SECONDS = _int_env("MEMORY_TTL_SECONDS", 1800)
-MEMORY_MAX_SESSIONS = _int_env("MEMORY_MAX_SESSIONS", 2000)
 MAX_MESSAGE_LENGTH = 500
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 

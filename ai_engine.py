@@ -5,7 +5,6 @@ from datetime import datetime
 
 import config
 from firebase_data import DataUnavailable, children
-from memory import Memory
 
 log = logging.getLogger("durbar.engine")
 
@@ -23,7 +22,15 @@ MONTH_NAME_TO_NUM = {
     "ashoj": 6, "kartik": 7, "kattik": 7, "mangsir": 8, "mangshir": 8, "poush": 9, "push": 9,
     "magh": 10, "falgun": 11, "fagun": 11, "chaitra": 12, "chait": 12,
 }
-NOTES_PER_PAGE = 3
+NAME_KEYS = ("fullName", "full_name", "fullname", "name", "displayName")
+IMAGE_KEYS = ("profileImageUrl", "profileImageURL", "profileImage", "profilePicture", "profilePic",
+              "photoUrl", "photoURL", "imageUrl", "imageURL", "image", "avatar")
+ROLE_KEYS = ("role", "userRole", "userType", "type")
+CLASS_KEYS = ("className", "class", "grade", "classLevel", "studentClass")
+SUBJECT_KEYS = ("assignedSubjects", "assignedSubject", "subjects", "subject")
+SUBJECT_NAME_KEYS = ("name", "title", "subject", "subjectName")
+MAX_PROFILES = 3
+MAX_NOTES = 3
 
 
 def normalize(text: str) -> str:
@@ -126,10 +133,51 @@ def _pick(options, lang):
     return options.get(lang) or options.get("en", "")
 
 
+def _first_text(user, keys):
+    for key in keys:
+        value = user.get(key)
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool) and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _user_image(user):
+    for key in IMAGE_KEYS:
+        url = _first_url(user.get(key))
+        if url:
+            return url
+    return ""
+
+
+def _user_subjects(user):
+    names = []
+    for key in SUBJECT_KEYS:
+        node = user.get(key)
+        if node in (None, "", [], {}):
+            continue
+        if isinstance(node, str):
+            names += [p.strip() for p in node.split(",") if p.strip()]
+        else:
+            for child_key, value in children(node):
+                if isinstance(value, str) and value.strip():
+                    names.append(value.strip())
+                elif isinstance(value, dict):
+                    label = _first_text(value, SUBJECT_NAME_KEYS)
+                    names.append(label or child_key)
+                elif value is True:
+                    names.append(child_key)
+        if names:
+            break
+    unique = []
+    for n in names:
+        if n not in unique:
+            unique.append(n)
+    return unique
+
+
 class DurbarEngine:
-    def __init__(self, data, knowledge_path=None, memory=None):
+    def __init__(self, data, knowledge_path=None):
         self.data = data
-        self.memory = memory or Memory()
         path = knowledge_path or config.KNOWLEDGE_FILE
         with open(path, encoding="utf-8") as f:
             self.kb = json.load(f)
@@ -141,12 +189,6 @@ class DurbarEngine:
                 self.smalltalk.append((normalize(phrase).split(), entry))
         self.smalltalk.sort(key=lambda pair: len(pair[0]), reverse=True)
 
-        mem_kb = self.kb.get("memory", {})
-        self.name_ask = [normalize(p).split() for p in mem_kb.get("name_ask", [])]
-        self.name_set = [normalize(p).split() for p in mem_kb.get("name_set", [])]
-        self.name_stop = {normalize(w) for w in mem_kb.get("name_stop", [])}
-        self.more_words = [normalize(w) for w in mem_kb.get("more_words", [])]
-
         lang_kb = self.kb.get("language", {})
         self.rn_words = {normalize(w) for w in lang_kb.get("romanized_words", [])}
         self.en_words = {normalize(w) for w in lang_kb.get("english_words", [])}
@@ -157,6 +199,10 @@ class DurbarEngine:
 
         intents = self.kb.get("intents", {})
         self.notes_words = [normalize(w) for w in intents.get("notes_words", [])]
+        self.profile_words = [normalize(w) for w in intents.get("profile_words", [])]
+        self.profile_drop = {normalize(f) for f in intents.get("profile_fillers", [])}
+        for phrase in self.profile_words:
+            self.profile_drop |= set(phrase.split())
         self.calendar_kinds = [
             {**k, "words": [normalize(w) for w in k["words"]]} for k in intents.get("calendar", [])
         ]
@@ -176,7 +222,7 @@ class DurbarEngine:
         self.format_names = self.kb.get("format_names", {})
         self.stopwords = {normalize(w) for w in self.kb.get("stopwords", [])}
 
-        self.drop = set(self.notes_words) | set(self.more_words)
+        self.drop = set(self.notes_words)
         for words in self.format_words.values():
             self.drop |= set(words)
         for words in self.tenses.values():
@@ -186,63 +232,39 @@ class DurbarEngine:
         text = _pick(self.msg.get(key, {}), lang)
         return text.format(**kw) if kw else text
 
-    def answer(self, message: str, session_id: str = "") -> str:
-        mem = self.memory.get(session_id) if session_id else Memory.blank()
+    def answer(self, message: str) -> str:
         norm = normalize(message or "")
         if not norm:
-            return self._t("empty", mem.get("lang", "en"))
+            return self._t("empty", "en")
         tokens = norm.split()
-        lang = self._language(tokens, norm, mem)
-        mem["lang"] = lang
+        lang = self._language(tokens, norm)
         try:
-            return self._respond(norm, tokens, lang, mem)
+            return self._respond(norm, tokens, lang)
         except DataUnavailable:
             return self._t("db_unavailable", lang)
         except Exception:
             log.exception("Unexpected error while answering")
             return self._t("error", lang)
 
-    def _respond(self, norm, tokens, lang, mem):
-        reply = self._name_reply(tokens, lang, mem)
-        if reply:
-            return reply
-
-        last = mem.get("last") or {}
-        more = _has_phrase(norm, tokens, self.more_words)
-        tense = self._tense(tokens)
-
+    def _respond(self, norm, tokens, lang):
+        if _has_phrase(norm, tokens, self.profile_words):
+            return self._profile_reply(tokens, lang)
         if _has_phrase(norm, tokens, self.notes_words):
-            return self._notes_reply(norm, tokens, lang, mem, more)
-
+            return self._notes_reply(norm, tokens, lang)
         kind = self._calendar_kind(norm, tokens)
         if kind:
-            return self._calendar_flow(kind, tense, more, False, lang, mem)
+            return self._calendar_reply(kind, self._tense(tokens), lang)
+        reply = self._smalltalk(tokens, lang)
+        return reply if reply else self._t("fallback", lang)
 
-        if last.get("intent") == "calendar" and (tense or more) and len(tokens) <= 6:
-            return self._calendar_flow(self._kind_by_name(last["kind"]), tense, more, True, lang, mem)
-
-        if last.get("intent") == "notes" and more:
-            return self._notes_reply(norm, tokens, lang, mem, more)
-
-        reply = self._smalltalk(tokens, lang, mem)
-        if reply:
-            return reply
-
-        if last.get("intent") == "notes" and self._subject_only(tokens):
-            return self._notes_reply(norm, tokens, lang, mem, False)
-
-        return self._t("fallback", lang)
-
-    def _language(self, tokens, norm, mem):
+    def _language(self, tokens, norm):
         if _is_deva(norm):
             return "ne"
         rn = sum(1 for t in tokens if t in self.rn_words)
         en = sum(1 for t in tokens if t in self.en_words)
         if rn and rn >= en:
             return "rn"
-        if en:
-            return "en"
-        return mem.get("lang", "en")
+        return "en"
 
     def _tense(self, tokens):
         for t in tokens:
@@ -250,44 +272,67 @@ class DurbarEngine:
                 for w in words:
                     if t == w or (_is_deva(w) and t.startswith(w)):
                         return name
-        return None
+        return "auto"
 
-    def _name_reply(self, tokens, lang, mem):
-        facts = mem.setdefault("facts", {})
-        for phrase in self.name_ask:
-            if _seq_index(tokens, phrase) is not None:
-                name = facts.get("name")
-                if name:
-                    return self._t("name_known", lang, name=name)
-                return self._t("name_unknown", lang)
-        for phrase in self.name_set:
-            i = _seq_index(tokens, phrase)
-            if i is None:
-                continue
-            words = []
-            for t in tokens[i + len(phrase):]:
-                if t in self.name_stop:
-                    break
-                words.append(t)
-                if len(words) == 2:
-                    break
-            if words:
-                name = " ".join(w if _is_deva(w) else w.capitalize() for w in words)[:30]
-                facts["name"] = name
-                return self._t("name_saved", lang, name=name)
-        return None
-
-    def _smalltalk(self, tokens, lang, mem):
-        name = (mem.get("facts") or {}).get("name")
+    def _smalltalk(self, tokens, lang):
         for phrase, entry in self.smalltalk:
             n = len(phrase)
             if n == 0 or len(tokens) - n > 2:
                 continue
             if _seq_index(tokens, phrase) is not None:
-                if name and "reply_named" in entry:
-                    return _pick(entry["reply_named"], lang).format(name=name)
                 return _pick(entry["reply"], lang)
         return None
+
+    @staticmethod
+    def _name_matches(query, name):
+        name_tokens = normalize(name).split()
+        if not name_tokens:
+            return False
+        for q in query:
+            hit = False
+            for nt in name_tokens:
+                if nt == q or nt.startswith(q) or (_is_deva(q) and q.startswith(nt) and len(nt) >= 2):
+                    hit = True
+                    break
+            if not hit:
+                return False
+        return True
+
+    def _profile_reply(self, tokens, lang):
+        query = [t for t in tokens if t not in self.stopwords and t not in self.profile_drop]
+        if not query:
+            return self._t("ask_person", lang)
+
+        found = []
+        for uid, user in children(self.data.get_users()):
+            if not isinstance(user, dict):
+                continue
+            name = _first_text(user, NAME_KEYS)
+            if name and self._name_matches(query, name):
+                exact = normalize(name).split() == query
+                found.append((0 if exact else 1, name, user))
+        if not found:
+            return self._t("profile_none", lang, query=" ".join(query))
+
+        found.sort(key=lambda item: (item[0], normalize(item[1])))
+        blocks = []
+        for _, name, user in found[:MAX_PROFILES]:
+            lines = [self._t("profile_name", lang, value=name)]
+            role = _first_text(user, ROLE_KEYS)
+            if role:
+                lines.append(self._t("profile_role", lang, value=role.capitalize()))
+            class_name = _first_text(user, CLASS_KEYS)
+            if class_name:
+                lines.append(self._t("profile_class", lang, value=class_name))
+            subjects = _user_subjects(user)
+            if subjects:
+                lines.append(self._t("profile_subjects", lang, value=", ".join(subjects)))
+            image = _user_image(user) or self._t("profile_no_picture", lang)
+            lines.append(self._t("profile_picture", lang, value=image))
+            blocks.append("\n".join(lines))
+        if len(found) > MAX_PROFILES:
+            blocks.append(self._t("profile_more", lang, count=len(found) - MAX_PROFILES))
+        return "\n\n".join(blocks)
 
     def today_bs(self):
         try:
@@ -305,12 +350,6 @@ class DurbarEngine:
             if _has_phrase(norm, tokens, kind["words"]):
                 return kind
         return None
-
-    def _kind_by_name(self, name):
-        for kind in self.calendar_kinds:
-            if kind["name"] == name:
-                return kind
-        return self.calendar_kinds[0]
 
     @staticmethod
     def _parse_calendar(year, node, wanted_types):
@@ -362,7 +401,7 @@ class DurbarEngine:
             pool = [e for e in events if e["end"] >= today]
         return sorted(pool, key=lambda e: (e["start"], e["end"]))
 
-    def _collect(self, types, tense, today, offset):
+    def _collect(self, types, tense, today):
         year, month, _ = today
         if tense == "past":
             years = [year, year - 1]
@@ -370,7 +409,7 @@ class DurbarEngine:
             years = [year] + ([year - 1] if month == 1 else [])
         events = self._events(years, types)
         found = self._select(events, tense, today)
-        if tense != "past" and len(found) <= offset:
+        if tense != "past" and not found:
             events += self._events([year + 1], types)
             found = self._select(events, tense, today)
         return found
@@ -388,19 +427,7 @@ class DurbarEngine:
             return _pick(names, lang)
         return etype.replace("_", " ")
 
-    def _calendar_flow(self, kind, tense, more, inherited, lang, mem):
-        last = mem.get("last") or {}
-        prev = last if last.get("intent") == "calendar" else {}
-        explicit = tense is not None
-        if not explicit:
-            tense = prev.get("tense", "auto")
-        advance = more or (inherited and explicit)
-        offset = 0
-        if advance and prev.get("kind") == kind["name"] and prev.get("tense") == tense:
-            offset = prev.get("offset", 0) + 1
-        return self._calendar_reply(kind, tense, offset, lang, mem)
-
-    def _calendar_reply(self, kind, tense, offset, lang, mem):
+    def _calendar_reply(self, kind, tense, lang):
         today = self.today_bs()
         if today is None:
             return self._t("date_unavailable", lang)
@@ -408,21 +435,15 @@ class DurbarEngine:
         label = _pick(kind["labels"], lang)
         prefix = ""
 
-        found = self._collect(types, tense, today, offset)
+        found = self._collect(types, tense, today)
         if tense == "present" and not found:
             prefix = self._t("cal_now_none", lang, label=label) + "\n"
-            tense = "future"
-            offset = 0
-            found = self._collect(types, tense, today, offset)
+            found = self._collect(types, "future", today)
 
         if not found:
             return prefix + self._t("cal_none", lang, label=label)
-        if offset >= len(found):
-            return self._t("cal_more_none", lang, label=label)
 
-        ev = found[offset]
-        mem["last"] = {"intent": "calendar", "kind": kind["name"], "tense": tense, "offset": offset}
-
+        ev = found[0]
         type_name = self._type_name(ev["type"], lang)
         title = ev["title"] or self._t("untitled", lang, type=type_name)
         if ev["start"] == ev["end"]:
@@ -460,24 +481,12 @@ class DurbarEngine:
                 terms.append(term)
         return terms
 
-    def _subject_only(self, tokens):
-        terms = self._query_terms(tokens, self.drop)
-        return bool(terms) and all(t in self.variants for t in terms)
-
     def _hits(self, term, words) -> bool:
         return any(_term_in(v, words) for v in self.variants.get(term, {term}))
 
-    def _notes_reply(self, norm, tokens, lang, mem, more):
-        last = mem.get("last") or {}
-        prev = last if last.get("intent") == "notes" else {}
-
+    def _notes_reply(self, norm, tokens, lang):
         wanted_formats = {f for f, words in self.format_words.items() if _has_phrase(norm, tokens, words)}
-        fresh = self._query_terms(tokens, self.drop)
-        terms = fresh or list(prev.get("terms", []))
-        advance = bool(prev) and more and (not fresh or fresh == prev.get("terms"))
-        offset = prev.get("offset", 0) + NOTES_PER_PAGE if advance else 0
-        if advance and not wanted_formats:
-            wanted_formats = set(prev.get("formats", []))
+        terms = self._query_terms(tokens, self.drop)
 
         units = self.data.get_units()
         subject_keys, entries = [], []
@@ -508,7 +517,6 @@ class DurbarEngine:
             subjects_hint = self._t("notes_subjects", lang, subjects=", ".join(subject_keys[:15]))
 
         if not terms:
-            mem["last"] = {"intent": "notes", "terms": [], "formats": [], "offset": 0}
             return self._t("ask_subject", lang) + subjects_hint
 
         subject_terms = {t for t in terms if any(self._hits(t, e["key_words"]) for e in entries)}
@@ -555,10 +563,7 @@ class DurbarEngine:
                 format_note = self._t("notes_format_missing", lang, formats=joined) + " "
 
         pool.sort(key=lambda e: (-score(e), -e["created"]))
-        if offset >= len(pool):
-            return self._t("notes_more_none", lang)
-        shown = pool[offset:offset + NOTES_PER_PAGE]
-        mem["last"] = {"intent": "notes", "terms": terms, "formats": sorted(wanted_formats), "offset": offset}
+        shown = pool[:MAX_NOTES]
 
         if relaxed_for:
             intro = self._t("notes_intro_relaxed", lang, other=relaxed_for, topic=topic)
@@ -567,7 +572,7 @@ class DurbarEngine:
 
         labels = self.format_labels.get(lang) or self.format_labels.get("en", {})
         lines = [format_note + intro, ""]
-        for i, e in enumerate(shown, offset + 1):
+        for i, e in enumerate(shown, 1):
             lines.append(self._t("notes_item", lang, i=i, title=e["title"], subject=e["subject"], unit=e["unit"]))
             if e["description"]:
                 desc = e["description"]
@@ -576,7 +581,6 @@ class DurbarEngine:
                 for url in e[key][:3]:
                     lines.append(f"   {labels.get(fmt, fmt)}: {url}")
             lines.append("")
-        remaining = len(pool) - offset - len(shown)
-        if remaining > 0:
-            lines.append(self._t("notes_more", lang, count=remaining))
+        if len(pool) > len(shown):
+            lines.append(self._t("notes_more", lang, count=len(pool) - len(shown)))
         return "\n".join(lines).strip()

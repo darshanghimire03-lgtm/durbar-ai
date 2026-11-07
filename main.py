@@ -8,13 +8,11 @@ from pydantic import BaseModel, Field
 import config
 from ai_engine import DurbarEngine
 from firebase_data import FirebaseData
-from memory import Memory
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 data = FirebaseData()
-memory = Memory()
-engine = DurbarEngine(data, memory=memory)
+engine = DurbarEngine(data)
 
 
 @asynccontextmanager
@@ -34,7 +32,6 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     message: str = Field(default="", max_length=config.MAX_MESSAGE_LENGTH)
-    session_id: str = Field(default="", max_length=64)
 
 
 class ChatResponse(BaseModel):
@@ -57,4 +54,4 @@ def health():
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
-    return {"reply": engine.answer(request.message, request.session_id)}
+    return {"reply": engine.answer(request.message)}

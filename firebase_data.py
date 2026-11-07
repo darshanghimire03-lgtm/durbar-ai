@@ -1,11 +1,3 @@
-"""Read-only access to Firebase Realtime Database through its public REST API.
-
-No Admin SDK and no service-account key are needed. The database rules decide
-what can be read: make only `calendar` and `units` publicly readable (see README).
-
-This module only performs HTTP GET requests. It never writes, updates or deletes,
-and it only reads the two paths listed in config.py.
-"""
 import json
 import logging
 import time
@@ -18,15 +10,10 @@ log = logging.getLogger("durbar.firebase")
 
 
 class DataUnavailable(Exception):
-    """Raised when Firebase is not configured or a read fails."""
+    pass
 
 
 def children(node):
-    """Return (key, value) pairs of a Firebase node as strings.
-
-    Firebase returns a node as a *list* when its keys look like 0,1,2,...
-    (for example months 1-12), so both dicts and lists must be handled.
-    """
     if isinstance(node, dict):
         return [(str(k), v) for k, v in node.items() if v is not None]
     if isinstance(node, list):
@@ -36,12 +23,11 @@ def children(node):
 
 class FirebaseData:
     def __init__(self):
-        self.status = "not_configured"  # not_configured | configured
+        self.status = "not_configured"
         self.error = None
         self._base = None
         self._cache = {}
 
-    # ---- setup --------------------------------------------------------
     def connect(self) -> None:
         url = config.FIREBASE_DATABASE_URL.rstrip("/")
         if not url.startswith("https://"):
@@ -57,7 +43,6 @@ class FirebaseData:
     def connected(self) -> bool:
         return self._base is not None
 
-    # ---- HTTP ---------------------------------------------------------
     def _http_get(self, url: str):
         req = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -78,16 +63,14 @@ class FirebaseData:
             raise DataUnavailable(type(exc).__name__) from exc
 
     def check(self):
-        """Used by /health. Returns (status, detail)."""
         if self._base is None:
             return self.status, self.error
         try:
-            self._fetch(config.CALENDAR_PATH, "?shallow=true")  # keys only: very light
+            self._fetch(config.CALENDAR_PATH, "?shallow=true")
             return "connected", None
         except DataUnavailable as exc:
             return "error", str(exc)
 
-    # ---- reads (cached briefly to save bandwidth) ---------------------
     def _read(self, path: str):
         now = time.monotonic()
         hit = self._cache.get(path)
@@ -98,9 +81,10 @@ class FirebaseData:
         return value
 
     def get_calendar_year(self, bs_year: int):
-        """calendar/{BSyear}  ->  {month: {type: {eventId: event}}}"""
         return self._read(f"{config.CALENDAR_PATH}/{int(bs_year)}")
 
     def get_units(self):
-        """units  ->  {subjectKey: {unitId: unit}}"""
         return self._read(config.UNITS_PATH)
+
+    def get_users(self):
+        return self._read(config.USERS_PATH)

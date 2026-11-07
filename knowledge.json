@@ -1,0 +1,112 @@
+{
+  "messages": {
+    "fallback": "I don't know that yet. You can teach me!",
+    "empty": "Please type a message.",
+    "db_unavailable": "I can't reach my information database right now. Please try again in a little while.",
+    "error": "Sorry, something went wrong while answering. Please try again.",
+    "date_unavailable": "I couldn't work out today's Bikram Sambat date, so I can't check the calendar right now.",
+    "ask_subject": "Which subject or chapter do you need notes for? For example: \"computer note\" or \"English notes\"."
+  },
+
+  "responses": {
+    "hell": "Hello!",
+    "hi": "Hello!",
+    "hii": "Hello!",
+    "hello": "Hello!",
+    "helo": "Hello!",
+    "hey": "Hello!",
+    "how are you": "I'm fine! How are you?",
+    "how r u": "I'm fine! How are you?",
+    "good morning": "Good morning!",
+    "good afternoon": "Good afternoon!",
+    "good evening": "Good evening!",
+    "good night": "Good night!",
+    "who are you": "I'm Durbar AI.",
+    "what is your name": "I'm Durbar AI.",
+    "your name": "I'm Durbar AI.",
+    "thank you": "You're welcome!",
+    "thanks": "You're welcome!",
+    "bye": "Goodbye!",
+    "namaste": "Namaste!",
+    "नमस्ते": "नमस्ते!",
+    "kasto cha": "I'm fine! How are you?",
+    "के छ": "ठीक छ! तपाईंलाई कस्तो छ?",
+    "धन्यवाद": "स्वागत छ!",
+    "dhanyabad": "You're welcome!"
+  },
+
+  "intents": {
+    "notes_words": [
+      "note", "notes", "nots", "pdf", "pdfs", "chapter", "chapters",
+      "material", "materials", "resource", "resources", "youtube", "video", "videos",
+      "नोट", "नोटहरू", "नोट्स", "अध्याय"
+    ],
+    "calendar": [
+      {
+        "name": "exam",
+        "label": "exam or test",
+        "types": ["exam", "test"],
+        "words": ["exam", "exams", "examination", "test", "tests", "pariksha", "परीक्षा"]
+      },
+      {
+        "name": "school_event",
+        "label": "school event",
+        "types": ["school_event"],
+        "words": ["school event", "event", "events", "karyakram", "कार्यक्रम"]
+      },
+      {
+        "name": "emergency",
+        "label": "emergency holiday",
+        "types": ["emergency"],
+        "words": ["emergency", "आकस्मिक"]
+      },
+      {
+        "name": "vacation",
+        "label": "vacation",
+        "types": ["vacation"],
+        "words": ["vacation", "vacations", "break", "भ्याकेसन"]
+      },
+      {
+        "name": "festival",
+        "label": "festival",
+        "types": ["festival"],
+        "words": ["festival", "festivals", "chad", "chaad", "parva", "चाड", "पर्व"]
+      },
+      {
+        "name": "holiday",
+        "label": "holiday",
+        "types": ["emergency", "vacation", "festival"],
+        "words": [
+          "holiday", "holidays", "chhuti", "chhutti", "chuti", "chutti", "chhutii",
+          "bida", "bidaa", "off day", "छुट्टी", "छुटी", "बिदा"
+        ]
+      }
+    ]
+  },
+
+  "subjects": {
+    "computer": ["computer", "computers", "comp", "kompyutar", "कम्प्युटर", "कम्पुटर"],
+    "english": ["english", "angreji", "अंग्रेजी", "अङ्ग्रेजी"],
+    "mathematics": ["mathematics", "math", "maths", "mathematic", "ganit", "गणित"],
+    "science": ["science", "vigyan", "bigyan", "विज्ञान"],
+    "nepali": ["nepali", "नेपाली"],
+    "social": ["social", "samajik", "सामाजिक"]
+  },
+
+  "format_words": {
+    "pdf": ["pdf", "pdfs"],
+    "photo": ["photo", "photos", "image", "images", "picture", "pictures"],
+    "youtube": ["youtube", "video", "videos"]
+  },
+
+  "stopwords": [
+    "i", "me", "my", "mero", "need", "want", "give", "find", "show", "get", "a", "an", "the",
+    "of", "for", "on", "in", "about", "please", "pls", "plz", "can", "you", "could", "tell",
+    "do", "have", "any", "some", "there", "is", "are", "our", "hamro", "ko", "ka", "ki", "lai",
+    "deu", "dinu", "dinus", "deunu", "dida", "dinuhos", "chahiyo", "chahincha", "chaiyo",
+    "xa", "cha", "ho", "aba", "ra", "and", "to", "with", "from", "mailai", "malai", "k", "ke",
+    "how", "what", "which", "all", "related", "regarding",
+    "को", "का", "की", "मलाई", "दिनुस्", "दिनु", "देउ", "देऊ", "चाहियो", "चाहिन्छ",
+    "खोज्नुस्", "हेर्नुस्", "बारे", "बारेमा", "बताउनुस्", "मेरो", "हाम्रो"
+  ]
+}

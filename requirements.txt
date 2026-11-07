@@ -1,0 +1,4 @@
+fastapi>=0.110
+uvicorn>=0.29
+firebase-admin>=6.5
+nepali-datetime>=1.0.8

@@ -30,7 +30,7 @@ def _int_env(name: str, default: int) -> int:
 
 
 SERVICE_NAME = "Durbar AI"
-VERSION = "0.4"
+VERSION = "0.5"
 
 FIREBASE_DATABASE_URL = os.getenv("FIREBASE_DATABASE_URL", "").strip()
 
@@ -44,4 +44,8 @@ ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",
 
 NEPAL_TZ = timezone(timedelta(hours=5, minutes=45))
 
-KNOWLEDGE_FILE = BASE_DIR / "knowledge.json"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.8-27b").strip()
+OPENROUTER_REASONING = os.getenv("OPENROUTER_REASONING", "1") == "1"
+LLM_MAX_TOKENS = _int_env("LLM_MAX_TOKENS", 1500)
+LLM_TIMEOUT = _int_env("LLM_TIMEOUT", 60)

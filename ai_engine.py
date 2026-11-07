@@ -8,6 +8,7 @@ from datetime import datetime
 import config
 import tense_lab
 from firebase_data import DataUnavailable, children
+from llm_client import LLMClient
 from tiny_model import TinyModel
 from training_data import DATA, EMPTY, FALLBACK
 
@@ -252,6 +253,7 @@ class DurbarEngine:
     def __init__(self, data):
         self.data = data
         self.model = TinyModel(DATA)
+        self.llm = LLMClient()
         self.alias_to_subject = {a: c for c, aliases in SUBJECTS.items() for a in aliases}
         self.drop = set(NOTES_WORDS)
         for words in FORMAT_WORDS.values():
@@ -285,14 +287,18 @@ class DurbarEngine:
         if clock:
             return clock
         if has_phrase(norm, tokens, PROFILE_WORDS):
-            return self._profile_reply(tokens)
+            reply = self._profile_reply(tokens)
+            if reply is not None:
+                return reply
         if has_phrase(norm, tokens, NOTES_WORDS):
             return self._notes_reply(norm, tokens)
         kind = self._calendar_kind(norm, tokens)
         if kind:
             return self._calendar_reply(kind, self._tense(tokens))
         reply, score = self.model.ask(message)
-        return reply if reply and score >= MODEL_THRESHOLD else FALLBACK
+        if reply and score >= MODEL_THRESHOLD:
+            return reply
+        return self.llm.ask(message) or FALLBACK
 
     def _tense(self, tokens):
         for t in tokens:
@@ -330,6 +336,8 @@ class DurbarEngine:
             if name and self._name_matches(query, name):
                 found.append((0 if normalize(name).split() == query else 1, name, user))
         if not found:
+            if tokens[:2] == ["who", "is"]:
+                return None
             return MSG["profile_none"].format(query=" ".join(query))
         found.sort(key=lambda item: (item[0], normalize(item[1])))
         blocks = []

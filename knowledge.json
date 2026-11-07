@@ -1,38 +1,239 @@
 {
   "messages": {
-    "fallback": "I don't know that yet. You can teach me!",
-    "empty": "Please type a message.",
-    "db_unavailable": "I can't reach my information database right now. Please try again in a little while.",
-    "error": "Sorry, something went wrong while answering. Please try again.",
-    "date_unavailable": "I couldn't work out today's Bikram Sambat date, so I can't check the calendar right now.",
-    "ask_subject": "Which subject or chapter do you need notes for? For example: \"computer note\" or \"English notes\"."
+    "fallback": {
+      "en": "I don't know that yet. You can teach me!",
+      "ne": "मलाई यो अहिलेसम्म थाहा छैन। तपाईंले मलाई सिकाउन सक्नुहुन्छ!",
+      "rn": "Malai yo ahilesamma thaha chaina. Tapaile malai sikauna saknuhuncha!"
+    },
+    "empty": {
+      "en": "Please type a message.",
+      "ne": "कृपया सन्देश लेख्नुहोस्।",
+      "rn": "Kripaya message lekhnuhos."
+    },
+    "db_unavailable": {
+      "en": "I can't reach my information database right now. Please try again in a little while.",
+      "ne": "म अहिले मेरो जानकारी डाटाबेसमा पुग्न सक्दिनँ। कृपया केही समयपछि फेरि प्रयास गर्नुहोस्।",
+      "rn": "Ma ahile mero jankari database ma pugna sakdina. Kripaya kehi samaya pachi pheri prayas garnuhos."
+    },
+    "error": {
+      "en": "Sorry, something went wrong while answering. Please try again.",
+      "ne": "माफ गर्नुहोस्, जवाफ दिँदा केही गडबड भयो। कृपया फेरि प्रयास गर्नुहोस्।",
+      "rn": "Maaf garnuhos, jawaf dida kehi gadbad bhayo. Kripaya pheri prayas garnuhos."
+    },
+    "date_unavailable": {
+      "en": "I couldn't work out today's Bikram Sambat date, so I can't check the calendar right now.",
+      "ne": "आजको विक्रम सम्वत् मिति निकाल्न सकिनँ, त्यसैले अहिले पात्रो हेर्न सक्दिनँ।",
+      "rn": "Aajako Bikram Sambat miti nikalna sakina, tesaile ahile patro herna sakdina."
+    },
+    "ask_subject": {
+      "en": "Which subject or chapter do you need notes for? For example: \"computer note\" or \"English notes\".",
+      "ne": "तपाईंलाई कुन विषय वा अध्यायको नोट चाहियो? जस्तै: \"कम्प्युटर नोट\" वा \"अंग्रेजी नोट\"।",
+      "rn": "Tapailai kun subject ya adhyayako note chahiyo? Jastai: \"computer ko note\" ya \"English ko note\"."
+    },
+    "date_fmt": {
+      "en": "{day} {month} {year} BS",
+      "ne": "{day} {month} {year} वि.सं.",
+      "rn": "{day} {month} {year} BS"
+    },
+    "date_range": {
+      "en": "{start} to {end}",
+      "ne": "{start} देखि {end} सम्म",
+      "rn": "{start} dekhi {end} samma"
+    },
+    "untitled": {
+      "en": "Untitled {type}",
+      "ne": "शीर्षकविहीन {type}",
+      "rn": "Shirshakbihin {type}"
+    },
+    "and_word": {
+      "en": " and ",
+      "ne": " र ",
+      "rn": " ra "
+    },
+    "cal_next": {
+      "en": "Your next {label} is \"{title}\" ({type}).",
+      "ne": "तपाईंको अर्को {label} \"{title}\" ({type}) हो।",
+      "rn": "Tapaiko arko {label} \"{title}\" ({type}) ho."
+    },
+    "cal_prev": {
+      "en": "Your previous {label} was \"{title}\" ({type}).",
+      "ne": "तपाईंको अघिल्लो {label} \"{title}\" ({type}) थियो।",
+      "rn": "Tapaiko aghillo {label} \"{title}\" ({type}) thiyo."
+    },
+    "cal_now": {
+      "en": "\"{title}\" is going on right now (until {end}).",
+      "ne": "\"{title}\" अहिले चलिरहेको छ ({end} सम्म)।",
+      "rn": "\"{title}\" ahile chaliraheko cha ({end} samma)."
+    },
+    "cal_now_none": {
+      "en": "No {label} is going on right now.",
+      "ne": "अहिले कुनै {label} चलिरहेको छैन।",
+      "rn": "Ahile kunai {label} chaliraheko chaina."
+    },
+    "cal_none": {
+      "en": "I couldn't find any {label} in the calendar for that. I don't want to guess, so please check with your school.",
+      "ne": "पात्रोमा {label} फेला परेन। म अनुमान गर्दिनँ, कृपया विद्यालयसँग सोध्नुहोस्।",
+      "rn": "Patro ma {label} fela paren. Ma anuman gardina, kripaya school sanga sodhnuhos."
+    },
+    "cal_more_none": {
+      "en": "There is nothing more to show for {label}.",
+      "ne": "देखाउन अरू {label} छैन।",
+      "rn": "Dekhauna aru {label} chaina."
+    },
+    "cal_date": {
+      "en": "Date: {date}",
+      "ne": "मिति: {date}",
+      "rn": "Miti: {date}"
+    },
+    "cal_details": {
+      "en": "Details: {text}",
+      "ne": "विवरण: {text}",
+      "rn": "Biwaran: {text}"
+    },
+    "notes_intro": {
+      "en": "Here are the notes I found for {topic}:",
+      "ne": "{topic} का लागि भेटिएका नोटहरू:",
+      "rn": "{topic} ka lagi bhetieka notes haru:"
+    },
+    "notes_intro_relaxed": {
+      "en": "I couldn't find notes specifically about \"{other}\", but here are notes for {topic}:",
+      "ne": "\"{other}\" को बारेमा विशेष नोट भेटिएन, तर {topic} का नोटहरू यी हुन्:",
+      "rn": "\"{other}\" ko barema bishesh note bhetiyena, tara {topic} ka notes haru yi hun:"
+    },
+    "notes_none": {
+      "en": "I couldn't find any notes matching \"{topic}\".",
+      "ne": "\"{topic}\" सँग मिल्ने कुनै नोट भेटिएन।",
+      "rn": "\"{topic}\" sanga milne kunai note bhetiyena."
+    },
+    "notes_subjects": {
+      "en": " Available subjects: {subjects}.",
+      "ne": " उपलब्ध विषयहरू: {subjects}।",
+      "rn": " Uplabdha subject haru: {subjects}."
+    },
+    "notes_more": {
+      "en": "...and {count} more. Say \"more\" to see them or add a chapter name to narrow it down.",
+      "ne": "...र थप {count} वटा छन्। हेर्न \"थप\" भन्नुहोस् वा अध्यायको नाम थप्नुहोस्।",
+      "rn": "...ra thap {count} wota chan. Herna \"aru\" bhannuhos ya adhyayako naam thapnuhos."
+    },
+    "notes_more_none": {
+      "en": "There are no more notes to show.",
+      "ne": "देखाउन अरू नोट छैन।",
+      "rn": "Dekhauna aru note chaina."
+    },
+    "notes_format_missing": {
+      "en": "I couldn't find notes with {formats}, but here are the notes I have.",
+      "ne": "{formats} भएको नोट भेटिएन, तर मसँग भएका नोटहरू यी हुन्।",
+      "rn": "{formats} bhako note bhetiyena, tara masanga bhaeka notes haru yi hun."
+    },
+    "notes_item": {
+      "en": "{i}. {title} (Subject: {subject}, Unit: {unit})",
+      "ne": "{i}. {title} (विषय: {subject}, एकाइ: {unit})",
+      "rn": "{i}. {title} (Subject: {subject}, Unit: {unit})"
+    },
+    "name_saved": {
+      "en": "Nice to meet you, {name}!",
+      "ne": "तपाईंलाई भेटेर खुसी लाग्यो, {name}!",
+      "rn": "Tapailai bhetera khusi laagyo, {name}!"
+    },
+    "name_known": {
+      "en": "Your name is {name}.",
+      "ne": "तपाईंको नाम {name} हो।",
+      "rn": "Tapaiko naam {name} ho."
+    },
+    "name_unknown": {
+      "en": "You haven't told me your name yet. Say \"my name is ...\".",
+      "ne": "तपाईंले मलाई आफ्नो नाम अहिलेसम्म भन्नुभएको छैन। \"मेरो नाम ... हो\" भन्नुहोस्।",
+      "rn": "Tapaile malai aafno naam ahilesamma bhannu bhaeko chaina. \"Mero naam ... ho\" bhannuhos."
+    }
   },
 
-  "responses": {
-    "hell": "Hello!",
-    "hi": "Hello!",
-    "hii": "Hello!",
-    "hello": "Hello!",
-    "helo": "Hello!",
-    "hey": "Hello!",
-    "how are you": "I'm fine! How are you?",
-    "how r u": "I'm fine! How are you?",
-    "good morning": "Good morning!",
-    "good afternoon": "Good afternoon!",
-    "good evening": "Good evening!",
-    "good night": "Good night!",
-    "who are you": "I'm Durbar AI.",
-    "what is your name": "I'm Durbar AI.",
-    "your name": "I'm Durbar AI.",
-    "thank you": "You're welcome!",
-    "thanks": "You're welcome!",
-    "bye": "Goodbye!",
-    "namaste": "Namaste!",
-    "नमस्ते": "नमस्ते!",
-    "kasto cha": "I'm fine! How are you?",
-    "के छ": "ठीक छ! तपाईंलाई कस्तो छ?",
-    "धन्यवाद": "स्वागत छ!",
-    "dhanyabad": "You're welcome!"
+  "smalltalk": [
+    {
+      "phrases": ["hi", "hii", "hiii", "hello", "helo", "hell", "hey", "namaste", "नमस्ते", "नमस्कार"],
+      "reply": {"en": "Hello!", "ne": "नमस्ते!", "rn": "Namaste!"},
+      "reply_named": {"en": "Hello, {name}!", "ne": "नमस्ते, {name}!", "rn": "Namaste, {name}!"}
+    },
+    {
+      "phrases": ["how are you", "how r u", "kasto cha", "kasto xa", "tapai kasto hunuhuncha", "के छ", "कस्तो छ", "तपाईं कस्तो हुनुहुन्छ"],
+      "reply": {"en": "I'm fine! How are you?", "ne": "म ठिक छु! तपाईंलाई कस्तो छ?", "rn": "Ma thik chu! Tapailai kasto cha?"}
+    },
+    {
+      "phrases": ["good morning", "subha prabhat", "शुभ प्रभात"],
+      "reply": {"en": "Good morning!", "ne": "शुभ प्रभात!", "rn": "Subha prabhat!"}
+    },
+    {
+      "phrases": ["good afternoon", "subha dibaso", "शुभ दिवा"],
+      "reply": {"en": "Good afternoon!", "ne": "शुभ दिवा!", "rn": "Subha diwa!"}
+    },
+    {
+      "phrases": ["good evening", "subha sandhya", "शुभ सन्ध्या"],
+      "reply": {"en": "Good evening!", "ne": "शुभ सन्ध्या!", "rn": "Subha sandhya!"}
+    },
+    {
+      "phrases": ["good night", "subha ratri", "शुभ रात्री"],
+      "reply": {"en": "Good night!", "ne": "शुभ रात्री!", "rn": "Subha ratri!"}
+    },
+    {
+      "phrases": ["who are you", "what is your name", "your name", "timi ko ho", "tapai ko hunuhuncha", "timro naam k ho", "tapaiko naam k ho", "तिमी को हौ", "तपाईं को हुनुहुन्छ", "तिम्रो नाम के हो", "तपाईंको नाम के हो"],
+      "reply": {"en": "I'm Durbar AI.", "ne": "म दरबार एआई हुँ।", "rn": "Ma Durbar AI hu."}
+    },
+    {
+      "phrases": ["thank you", "thanks", "thankyou", "dhanyabad", "dhanyabaad", "धन्यवाद"],
+      "reply": {"en": "You're welcome!", "ne": "स्वागत छ!", "rn": "Swagat cha!"}
+    },
+    {
+      "phrases": ["bye", "goodbye", "alvida", "feri bhetaula", "अलविदा", "फेरि भेटौंला"],
+      "reply": {"en": "Goodbye!", "ne": "फेरि भेटौंला!", "rn": "Feri bhetaula!"}
+    }
+  ],
+
+  "memory": {
+    "name_ask": [
+      "what is my name", "what's my name", "whats my name", "who am i", "do you know my name",
+      "mero naam k ho", "mero naam ke ho", "mero name k ho", "mero name ke ho", "mero naam kun ho",
+      "मेरो नाम के हो", "मेरो नाम कुन हो"
+    ],
+    "name_set": ["my name is", "call me", "i am called", "mero naam", "mero name", "मेरो नाम"],
+    "name_stop": ["k", "ke", "kun", "ho", "hun", "hu", "is", "के", "कुन", "हो", "हुँ", "हुं", "हु"],
+    "more_words": [
+      "more", "another", "else", "aru", "aaru", "feri", "thap",
+      "अरू", "अरु", "थप", "फेरि"
+    ]
+  },
+
+  "language": {
+    "romanized_words": [
+      "ko", "ka", "ki", "lai", "malai", "mero", "hamro", "timro", "tapaiko", "tapai", "tapailai", "timi",
+      "kahile", "kasto", "cha", "chha", "xa", "ho", "deu", "dinu", "dinus", "dinuhos", "chahiyo", "chahincha",
+      "aba", "aile", "ahile", "aja", "aaja", "k", "ke", "kun", "kaha", "kati", "ma", "hajur",
+      "chhuti", "chhutti", "chuti", "chutti", "bida", "pariksha", "karyakram", "chad", "chaad", "parva",
+      "naam", "namaste", "dhanyabad", "bholi", "hijo", "arko", "aghillo", "pahile", "pachhi", "pachi",
+      "bhayo", "bhaeko", "thiyo", "hunuhuncha", "garnu", "bhannu", "sodhnu", "aaune", "aune", "gayeko", "gaeko", "aru"
+    ],
+    "english_words": [
+      "the", "is", "are", "am", "what", "when", "where", "who", "how", "me", "my", "you", "your", "please",
+      "give", "show", "find", "tell", "can", "could", "do", "does", "have", "there", "any", "some", "about",
+      "and", "for", "of", "to", "with", "from", "i", "it", "that", "this", "in", "on"
+    ]
+  },
+
+  "tenses": {
+    "past": [
+      "last", "previous", "prev", "past", "earlier", "before", "ago", "ended", "finished", "yesterday",
+      "recent", "recently", "pahile", "pahila", "agadi", "aghi", "aghillo", "agillo", "bityo", "bitesko",
+      "gayeko", "gaeko", "hijo",
+      "अघिल्लो", "अघि", "पहिले", "पहिला", "गएको", "गइसकेको", "बितेको", "हिजो", "थियो"
+    ],
+    "present": [
+      "now", "today", "current", "currently", "ongoing", "running", "tonight", "aja", "aaja", "aile",
+      "ahile", "abhi", "hal",
+      "आज", "आजको", "अहिले", "हाल", "चलिरहेको", "भइरहेको"
+    ],
+    "future": [
+      "next", "upcoming", "coming", "future", "tomorrow", "soon", "later", "arko", "aarko", "aaune",
+      "aune", "bholi", "pachi", "pachhi",
+      "अर्को", "आउने", "भोलि", "पछि", "हुनेछ", "हुन्छ"
+    ]
   },
 
   "intents": {
@@ -44,44 +245,53 @@
     "calendar": [
       {
         "name": "exam",
-        "label": "exam or test",
         "types": ["exam", "test"],
+        "labels": {"en": "exam or test", "ne": "परीक्षा", "rn": "pariksha"},
         "words": ["exam", "exams", "examination", "test", "tests", "pariksha", "परीक्षा"]
       },
       {
         "name": "school_event",
-        "label": "school event",
         "types": ["school_event"],
+        "labels": {"en": "school event", "ne": "विद्यालयको कार्यक्रम", "rn": "school ko karyakram"},
         "words": ["school event", "event", "events", "karyakram", "कार्यक्रम"]
       },
       {
         "name": "emergency",
-        "label": "emergency holiday",
         "types": ["emergency"],
+        "labels": {"en": "emergency holiday", "ne": "आकस्मिक बिदा", "rn": "emergency bida"},
         "words": ["emergency", "आकस्मिक"]
       },
       {
         "name": "vacation",
-        "label": "vacation",
         "types": ["vacation"],
+        "labels": {"en": "vacation", "ne": "भ्याकेसन", "rn": "vacation"},
         "words": ["vacation", "vacations", "break", "भ्याकेसन"]
       },
       {
         "name": "festival",
-        "label": "festival",
         "types": ["festival"],
+        "labels": {"en": "festival", "ne": "चाडपर्व", "rn": "chadparva"},
         "words": ["festival", "festivals", "chad", "chaad", "parva", "चाड", "पर्व"]
       },
       {
         "name": "holiday",
-        "label": "holiday",
         "types": ["emergency", "vacation", "festival"],
+        "labels": {"en": "holiday", "ne": "बिदा", "rn": "bida"},
         "words": [
           "holiday", "holidays", "chhuti", "chhutti", "chuti", "chutti", "chhutii",
           "bida", "bidaa", "off day", "छुट्टी", "छुटी", "बिदा"
         ]
       }
     ]
+  },
+
+  "type_names": {
+    "exam": {"en": "exam", "ne": "परीक्षा", "rn": "pariksha"},
+    "test": {"en": "test", "ne": "परीक्षण", "rn": "test"},
+    "school_event": {"en": "school event", "ne": "विद्यालयको कार्यक्रम", "rn": "school ko karyakram"},
+    "emergency": {"en": "emergency", "ne": "आकस्मिक", "rn": "emergency"},
+    "vacation": {"en": "vacation", "ne": "भ्याकेसन", "rn": "vacation"},
+    "festival": {"en": "festival", "ne": "चाड", "rn": "chad"}
   },
 
   "subjects": {
@@ -99,6 +309,18 @@
     "youtube": ["youtube", "video", "videos"]
   },
 
+  "format_labels": {
+    "en": {"pdf": "PDF", "photo": "Image", "youtube": "YouTube"},
+    "ne": {"pdf": "PDF", "photo": "तस्बिर", "youtube": "YouTube"},
+    "rn": {"pdf": "PDF", "photo": "Photo", "youtube": "YouTube"}
+  },
+
+  "format_names": {
+    "en": {"pdf": "a PDF", "photo": "an image", "youtube": "a YouTube link"},
+    "ne": {"pdf": "PDF", "photo": "तस्बिर", "youtube": "YouTube लिङ्क"},
+    "rn": {"pdf": "PDF", "photo": "photo", "youtube": "YouTube link"}
+  },
+
   "stopwords": [
     "i", "me", "my", "mero", "need", "want", "give", "find", "show", "get", "a", "an", "the",
     "of", "for", "on", "in", "about", "please", "pls", "plz", "can", "you", "could", "tell",
@@ -107,6 +329,6 @@
     "xa", "cha", "ho", "aba", "ra", "and", "to", "with", "from", "mailai", "malai", "k", "ke",
     "how", "what", "which", "all", "related", "regarding",
     "को", "का", "की", "मलाई", "दिनुस्", "दिनु", "देउ", "देऊ", "चाहियो", "चाहिन्छ",
-    "खोज्नुस्", "हेर्नुस्", "बारे", "बारेमा", "बताउनुस्", "मेरो", "हाम्रो"
+    "खोज्नुस्", "हेर्नुस्", "बारे", "बारेमा", "बताउनुस्", "मेरो", "हाम्रो", "लाई", "र"
   ]
 }

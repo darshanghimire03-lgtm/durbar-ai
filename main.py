@@ -1,7 +1,3 @@
-"""Durbar AI v0.2 - FastAPI entry point.
-
-Run locally:  uvicorn main:app --reload
-"""
 import logging
 from contextlib import asynccontextmanager
 
@@ -12,16 +8,18 @@ from pydantic import BaseModel, Field
 import config
 from ai_engine import DurbarEngine
 from firebase_data import FirebaseData
+from memory import Memory
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 data = FirebaseData()
-engine = DurbarEngine(data)
+memory = Memory()
+engine = DurbarEngine(data, memory=memory)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    data.connect()  # reads env vars; the app still starts if Firebase is missing
+    data.connect()
     yield
 
 
@@ -36,6 +34,7 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     message: str = Field(default="", max_length=config.MAX_MESSAGE_LENGTH)
+    session_id: str = Field(default="", max_length=64)
 
 
 class ChatResponse(BaseModel):
@@ -56,8 +55,6 @@ def health():
     return result
 
 
-# Plain `def` (not async): FastAPI runs it in a worker thread, so the blocking
-# Firebase read does not freeze the server.
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
-    return {"reply": engine.answer(request.message)}
+    return {"reply": engine.answer(request.message, request.session_id)}

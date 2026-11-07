@@ -1,9 +1,3 @@
-"""Central configuration for Durbar AI.
-
-Settings come from environment variables (set them in the Render dashboard).
-For local development you may put them in a `.env` file (see .env.example);
-this tiny loader reads it so we do not need an extra dependency.
-"""
 import os
 from datetime import timedelta, timezone
 from pathlib import Path
@@ -12,7 +6,6 @@ BASE_DIR = Path(__file__).resolve().parent
 
 
 def _load_dotenv(path: Path) -> None:
-    """Load KEY=VALUE lines from a local .env file (never overrides real env vars)."""
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -37,21 +30,19 @@ def _int_env(name: str, default: int) -> int:
 
 
 SERVICE_NAME = "Durbar AI"
-VERSION = "0.2"
+VERSION = "0.3"
 
-# --- Firebase Realtime Database (read through the public REST API, no key needed) ---
 FIREBASE_DATABASE_URL = os.getenv("FIREBASE_DATABASE_URL", "").strip()
 
-# The ONLY database paths this backend ever reads (both are public school info).
 CALENDAR_PATH = "calendar"
 UNITS_PATH = "units"
 
-# --- Behaviour ---
-CACHE_TTL_SECONDS = _int_env("CACHE_TTL_SECONDS", 60)  # reduces Firebase reads
+CACHE_TTL_SECONDS = _int_env("CACHE_TTL_SECONDS", 60)
+MEMORY_TTL_SECONDS = _int_env("MEMORY_TTL_SECONDS", 1800)
+MEMORY_MAX_SESSIONS = _int_env("MEMORY_MAX_SESSIONS", 2000)
 MAX_MESSAGE_LENGTH = 500
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 
-# Nepal Standard Time (UTC+05:45), used to decide what "today" is.
 NEPAL_TZ = timezone(timedelta(hours=5, minutes=45))
 
 KNOWLEDGE_FILE = BASE_DIR / "knowledge.json"

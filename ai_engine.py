@@ -1,21 +1,22 @@
-import ast
+import json
 import logging
-import operator
-import re
 import unicodedata
 from datetime import datetime
 
 import config
-import tense_lab
 from firebase_data import DataUnavailable, children
-from llm_client import LLMClient
-from tiny_model import TinyModel
-from training_data import DATA, EMPTY, FALLBACK
+from llm import OllamaBrain, OllamaUnavailable
 
 log = logging.getLogger("durbar.engine")
 
-BS_MONTHS = ["Baisakh", "Jestha", "Ashadh", "Shrawan", "Bhadra", "Ashwin",
-             "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"]
+MONTHS = {
+    "en": ["Baisakh", "Jestha", "Ashadh", "Shrawan", "Bhadra", "Ashwin",
+           "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"],
+    "ne": ["बैशाख", "जेठ", "असार", "श्रावण", "भदौ", "आश्विन",
+           "कार्तिक", "मंसिर", "पुष", "माघ", "फागुन", "चैत"],
+}
+MONTHS["rn"] = MONTHS["en"]
+DEVA_DIGITS = str.maketrans("0123456789", "०१२३४५६७८९")
 MONTH_NAME_TO_NUM = {
     "baisakh": 1, "baishakh": 1, "jestha": 2, "jeth": 2, "ashadh": 3, "asar": 3, "ashad": 3,
     "shrawan": 4, "srawan": 4, "saun": 4, "bhadra": 5, "bhadau": 5, "ashwin": 6, "asoj": 6,
@@ -31,125 +32,75 @@ SUBJECT_KEYS = ("assignedSubjects", "assignedSubject", "subjects", "subject")
 SUBJECT_NAME_KEYS = ("name", "title", "subject", "subjectName")
 MAX_PROFILES = 3
 MAX_NOTES = 3
-MODEL_THRESHOLD = 0.65
-
-NOTES_WORDS = ["note", "notes", "pdf", "pdfs", "chapter", "chapters", "material", "materials",
-               "resource", "resources", "youtube", "video", "videos"]
-PROFILE_WORDS = ["profile", "profiles", "account", "accounts", "who is", "details of", "detail of",
-                 "info of", "information of", "profile picture", "photo of", "picture of", "pic of", "image of"]
-PROFILE_FILLERS = {"details", "detail", "info", "information", "picture", "photo", "image", "pic",
-                   "name", "full", "send", "of", "about", "show", "give", "me", "please"}
-CALENDAR_KINDS = [
-    {"types": {"exam", "test"}, "label": "exam or test", "words": ["exam", "exams", "examination", "test", "tests"]},
-    {"types": {"school_event"}, "label": "school event", "words": ["school event", "event", "events"]},
-    {"types": {"emergency"}, "label": "emergency holiday", "words": ["emergency"]},
-    {"types": {"vacation"}, "label": "vacation", "words": ["vacation", "vacations", "break"]},
-    {"types": {"festival"}, "label": "festival", "words": ["festival", "festivals"]},
-    {"types": {"emergency", "vacation", "festival"}, "label": "holiday",
-     "words": ["holiday", "holidays", "day off", "off day", "closed", "chhuti", "leave"]},
-]
-TYPE_NAMES = {"exam": "exam", "test": "test", "school_event": "school event",
-              "emergency": "emergency", "vacation": "vacation", "festival": "festival"}
-TENSE_WORDS = {
-    "past": {"last", "previous", "prev", "past", "earlier", "before", "ago", "ended", "finished",
-             "yesterday", "recent", "recently", "was"},
-    "present": {"now", "today", "current", "currently", "ongoing", "running", "tonight"},
-    "future": {"next", "upcoming", "coming", "future", "tomorrow", "soon", "later", "will"},
-}
-SUBJECTS = {
-    "computer": {"computer", "computers", "comp"},
-    "english": {"english"},
-    "mathematics": {"mathematics", "math", "maths", "mathematic"},
-    "science": {"science"},
-    "nepali": {"nepali"},
-    "social": {"social"},
-}
-FORMAT_WORDS = {
-    "pdf": ["pdf", "pdfs"],
-    "photo": ["photo", "photos", "image", "images", "picture", "pictures"],
-    "youtube": ["youtube", "video", "videos"],
-}
-FORMAT_LABELS = {"pdf": "PDF", "photo": "Image", "youtube": "YouTube"}
-FORMAT_NAMES = {"pdf": "a PDF", "photo": "an image", "youtube": "a YouTube link"}
-STOPWORDS = {
-    "i", "me", "my", "need", "want", "give", "find", "show", "get", "a", "an", "the", "of", "for", "on",
-    "in", "about", "please", "pls", "plz", "can", "you", "could", "tell", "do", "have", "any", "some",
-    "there", "is", "are", "our", "and", "to", "with", "from", "how", "what", "which", "all", "related",
-    "regarding", "when", "where", "be", "it", "this", "that", "was", "will",
-}
-
-MSG = {
-    "db_unavailable": "I can't reach my information database right now. Please try again in a little while.",
-    "error": "Sorry, something went wrong while answering. Please try again.",
-    "date_unavailable": "I couldn't work out today's Bikram Sambat date, so I can't check the calendar right now.",
-    "ask_subject": "Which subject or chapter do you need notes for? For example: \"computer note\" or \"English notes\".",
-    "cal_next": "The next {label} is \"{title}\" ({type}).",
-    "cal_prev": "The previous {label} was \"{title}\" ({type}).",
-    "cal_now": "\"{title}\" is going on right now (until {end}).",
-    "cal_now_none": "No {label} is going on right now.",
-    "cal_none": "I couldn't find any {label} in the calendar for that. I don't want to guess, so please check with your school.",
-    "notes_intro": "Here are the notes I found for {topic}:",
-    "notes_intro_relaxed": "I couldn't find notes specifically about \"{other}\", but here are notes for {topic}:",
-    "notes_none": "I couldn't find any notes matching \"{topic}\".",
-    "notes_subjects": " Available subjects: {subjects}.",
-    "notes_more": "...and {count} more. Add a chapter name to narrow it down.",
-    "notes_format_missing": "I couldn't find notes with {formats}, but here are the notes I have.",
-    "ask_person": "Whose profile do you want? For example: \"profile of Ram Sharma\".",
-    "profile_none": "I couldn't find anyone named \"{query}\".",
-    "profile_more": "...and {count} more people. Use the full name to narrow it down.",
-}
-
-OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
-       ast.Div: operator.truediv, ast.Mod: operator.mod, ast.USub: operator.neg, ast.UAdd: operator.pos}
 
 
-def normalize(text):
+def normalize(text: str) -> str:
     text = unicodedata.normalize("NFC", str(text)).lower()
     text = "".join(" " if unicodedata.category(c)[0] in "PS" else c for c in text)
     return " ".join(text.split())
 
 
-def has_phrase(norm, tokens, words):
+def _is_deva(s: str) -> bool:
+    return any("\u0900" <= c <= "\u097f" for c in s)
+
+
+def _has_phrase(norm: str, tokens, words) -> bool:
     padded = f" {norm} "
     for w in words:
         if " " in w:
             if f" {w} " in padded:
                 return True
-        elif w in tokens:
-            return True
+        else:
+            for t in tokens:
+                if t == w or (_is_deva(w) and t.startswith(w)):
+                    return True
     return False
 
 
-def term_in(term, words):
+def _seq_index(tokens, phrase):
+    n = len(phrase)
+    if n == 0:
+        return None
+    for i in range(len(tokens) - n + 1):
+        if tokens[i:i + n] == phrase:
+            return i
+    return None
+
+
+def _term_in(term: str, words) -> bool:
     for w in words:
         if w == term:
+            return True
+        if _is_deva(term) and w.startswith(term):
             return True
         if len(term) >= 4 and len(w) >= 4 and (w.startswith(term) or term.startswith(w)):
             return True
     return False
 
 
-def to_int(value):
+def _to_int(value):
     try:
         return int(str(value).strip())
     except (TypeError, ValueError):
         return None
 
 
-def first_int(*values):
+def _first_int(*values):
     for v in values:
-        n = to_int(v)
+        n = _to_int(v)
         if n is not None:
             return n
     return None
 
 
-def parse_month(key):
-    n = to_int(key)
-    return n if n is not None else MONTH_NAME_TO_NUM.get(normalize(key))
+def _parse_month(key):
+    n = _to_int(key)
+    if n is not None:
+        return n
+    return MONTH_NAME_TO_NUM.get(normalize(key))
 
 
-def first_url(item):
+def _first_url(item):
     if isinstance(item, str):
         url = item.strip()
     elif isinstance(item, dict):
@@ -163,18 +114,27 @@ def first_url(item):
     return url if url.lower().startswith(("http://", "https://")) else None
 
 
-def urls(node):
-    return [u for u in (first_url(item) for _, item in children(node)) if u]
+def _urls(node):
+    found = []
+    for _, item in children(node):
+        url = _first_url(item)
+        if url:
+            found.append(url)
+    return found
 
 
-def num(value):
+def _num(value) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
 
 
-def first_text(user, keys):
+def _pick(options, lang):
+    return options.get(lang) or options.get("en", "")
+
+
+def _first_text(user, keys):
     for key in keys:
         value = user.get(key)
         if isinstance(value, (str, int, float)) and not isinstance(value, bool) and str(value).strip():
@@ -182,15 +142,15 @@ def first_text(user, keys):
     return ""
 
 
-def user_image(user):
+def _user_image(user):
     for key in IMAGE_KEYS:
-        url = first_url(user.get(key))
+        url = _first_url(user.get(key))
         if url:
             return url
     return ""
 
 
-def user_subjects(user):
+def _user_subjects(user):
     names = []
     for key in SUBJECT_KEYS:
         node = user.get(key)
@@ -203,7 +163,8 @@ def user_subjects(user):
                 if isinstance(value, str) and value.strip():
                     names.append(value.strip())
                 elif isinstance(value, dict):
-                    names.append(first_text(value, SUBJECT_NAME_KEYS) or child_key)
+                    label = _first_text(value, SUBJECT_NAME_KEYS)
+                    names.append(label or child_key)
                 elif value is True:
                     names.append(child_key)
         if names:
@@ -215,147 +176,214 @@ def user_subjects(user):
     return unique
 
 
-def safe_eval(node):
-    if isinstance(node, ast.Expression):
-        return safe_eval(node.body)
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
-        return node.value
-    if isinstance(node, ast.BinOp) and type(node.op) in OPS:
-        return OPS[type(node.op)](safe_eval(node.left), safe_eval(node.right))
-    if isinstance(node, ast.UnaryOp) and type(node.op) in OPS:
-        return OPS[type(node.op)](safe_eval(node.operand))
-    raise ValueError("unsupported")
-
-
-def solve_math(message):
-    t = message.lower().replace("×", "*").replace("÷", "/")
-    for word, sym in (("multiplied by", "*"), ("divided by", "/"), ("plus", "+"), ("minus", "-"), ("times", "*")):
-        t = t.replace(word, sym)
-    t = re.sub(r"(?<=\d)\s*x\s*(?=\d)", "*", t)
-    parts = [p.strip() for p in re.findall(r"[\d\.\+\-\*/%\(\)\s]+", t)]
-    if not parts:
-        return None
-    expr = max(parts, key=len)
-    if len(expr) > 40 or not re.search(r"\d\s*[\+\-\*/%]\s*[\(\d]", expr):
-        return None
-    try:
-        result = safe_eval(ast.parse(expr, mode="eval"))
-    except ZeroDivisionError:
-        return "I can't divide by zero."
-    except Exception:
-        return None
-    if isinstance(result, float):
-        result = int(result) if result.is_integer() else round(result, 6)
-    return f"{expr} = {result}"
-
-
 class DurbarEngine:
-    def __init__(self, data):
+    def __init__(self, data, knowledge_path=None, brain=None):
         self.data = data
-        self.model = TinyModel(DATA)
-        self.llm = LLMClient()
-        self.alias_to_subject = {a: c for c, aliases in SUBJECTS.items() for a in aliases}
-        self.drop = set(NOTES_WORDS)
-        for words in FORMAT_WORDS.values():
-            self.drop |= set(words)
-        for words in TENSE_WORDS.values():
-            self.drop |= words
-        self.profile_drop = set(PROFILE_FILLERS)
-        for phrase in PROFILE_WORDS:
-            self.profile_drop |= set(phrase.split())
+        path = knowledge_path or config.KNOWLEDGE_FILE
+        with open(path, encoding="utf-8") as f:
+            self.kb = json.load(f)
 
-    def answer(self, message):
+        self.msg = self.kb.get("messages", {})
+        self.smalltalk = []
+        for entry in self.kb.get("smalltalk", []):
+            for phrase in entry["phrases"]:
+                self.smalltalk.append((normalize(phrase).split(), entry))
+        self.smalltalk.sort(key=lambda pair: len(pair[0]), reverse=True)
+
+        lang_kb = self.kb.get("language", {})
+        self.rn_words = {normalize(w) for w in lang_kb.get("romanized_words", [])}
+        self.en_words = {normalize(w) for w in lang_kb.get("english_words", [])}
+
+        self.tenses = {
+            name: [normalize(w) for w in words] for name, words in self.kb.get("tenses", {}).items()
+        }
+
+        intents = self.kb.get("intents", {})
+        self.notes_words = [normalize(w) for w in intents.get("notes_words", [])]
+        self.profile_words = [normalize(w) for w in intents.get("profile_words", [])]
+        self.profile_drop = {normalize(f) for f in intents.get("profile_fillers", [])}
+        for phrase in self.profile_words:
+            self.profile_drop |= set(phrase.split())
+        self.calendar_kinds = [
+            {**k, "words": [normalize(w) for w in k["words"]]} for k in intents.get("calendar", [])
+        ]
+        self.type_names = self.kb.get("type_names", {})
+
+        self.alias_to_subject = {}
+        self.variants = {}
+        for canon, aliases in self.kb.get("subjects", {}).items():
+            names = {normalize(canon)} | {normalize(a) for a in aliases}
+            self.variants[normalize(canon)] = names
+            for name in names:
+                self.alias_to_subject[name] = normalize(canon)
+        self.format_words = {
+            fmt: [normalize(w) for w in words] for fmt, words in self.kb.get("format_words", {}).items()
+        }
+        self.format_labels = self.kb.get("format_labels", {})
+        self.format_names = self.kb.get("format_names", {})
+        self.stopwords = {normalize(w) for w in self.kb.get("stopwords", [])}
+
+        self.drop = set(self.notes_words)
+        for words in self.format_words.values():
+            self.drop |= set(words)
+        for words in self.tenses.values():
+            self.drop |= set(words)
+
+        # Optional Ollama brain; its tools reuse the exact same Firebase-backed lookups as the rules.
+        self.brain = brain or OllamaBrain(tools={
+            "get_school_calendar": self._tool_calendar,
+            "find_study_notes": self._tool_notes,
+            "find_person": self._tool_person,
+        })
+
+    def _t(self, key, lang, **kw):
+        text = _pick(self.msg.get(key, {}), lang)
+        return text.format(**kw) if kw else text
+
+    def answer(self, message: str, session_id=None, llm_gate=None) -> str:
+        return "".join(self.answer_stream(message, session_id, llm_gate))
+
+    def answer_stream(self, message: str, session_id=None, llm_gate=None):
+        """Yield the reply in chunks. Rule-based answers arrive as one chunk; LLM answers stream.
+
+        `llm_gate` is called just before the LLM is used (never for rule answers); return False to refuse.
+        """
         norm = normalize(message or "")
         if not norm:
-            return EMPTY
+            yield self._t("empty", "en")
+            return
+        tokens = norm.split()
+        lang = self._language(tokens, norm)
         try:
-            return self._respond(message, norm, norm.split())
+            reply = self._rule_reply(norm, tokens, lang)
+            if reply is not None:
+                yield reply
+                return
+            if self.brain.enabled:
+                if llm_gate is not None and not llm_gate():
+                    yield self._t("rate_limited", lang)
+                    return
+                sent = False
+                try:
+                    today_bs = self.today_bs()
+                    bs_text = f"{today_bs[0]} {MONTHS['en'][today_bs[1] - 1]} {today_bs[2]}" if today_bs else "unknown"
+                    ad_text = datetime.now(config.NEPAL_TZ).date().isoformat()
+                    for chunk in self.brain.stream(message.strip(), session_id, lang, ad_text, bs_text):
+                        sent = True
+                        yield chunk
+                except OllamaUnavailable:
+                    pass
+                if sent:
+                    return
+            yield self._t("fallback", lang)
         except DataUnavailable:
-            return MSG["db_unavailable"]
+            yield self._t("db_unavailable", lang)
         except Exception:
             log.exception("Unexpected error while answering")
-            return MSG["error"]
+            yield self._t("error", lang)
 
-    def _respond(self, message, norm, tokens):
-        maths = solve_math(message)
-        if maths:
-            return maths
-        taught = tense_lab.respond(message, norm)
-        if taught:
-            return taught
-        clock = self._clock(norm)
-        if clock:
-            return clock
-        if has_phrase(norm, tokens, PROFILE_WORDS):
-            reply = self._profile_reply(tokens)
-            if reply is not None:
-                return reply
-        if has_phrase(norm, tokens, NOTES_WORDS):
-            return self._notes_reply(norm, tokens)
+    def _rule_reply(self, norm, tokens, lang):
+        """Rule-based answer, or None when the rules do not understand the message."""
+        if _has_phrase(norm, tokens, self.profile_words):
+            return self._profile_reply(tokens, lang)
+        if _has_phrase(norm, tokens, self.notes_words):
+            return self._notes_reply(norm, tokens, lang)
         kind = self._calendar_kind(norm, tokens)
         if kind:
-            return self._calendar_reply(kind, self._tense(tokens))
-        reply, score = self.model.ask(message)
-        if reply and score >= MODEL_THRESHOLD:
-            return reply
-        return self.llm.ask(message) or FALLBACK
+            return self._calendar_reply(kind, self._tense(tokens), lang)
+        return self._smalltalk(tokens, lang)
+
+    # --- tools exposed to the LLM (English output; the model rewrites it in the user's language) ---
+
+    def _tool_calendar(self, kind="holiday", when="next"):
+        spec = next((k for k in self.calendar_kinds if k["name"] == kind), None)
+        if spec is None:
+            spec = next(k for k in self.calendar_kinds if k["name"] == "holiday")
+        tense = {"next": "auto", "now": "present", "last": "past"}.get(when, "auto")
+        return self._calendar_reply(spec, tense, "en")
+
+    def _tool_notes(self, query=""):
+        norm = normalize(query)
+        return self._notes_reply(norm, norm.split(), "en")
+
+    def _tool_person(self, name=""):
+        return self._profile_reply(normalize(name).split(), "en")
+
+    def _language(self, tokens, norm):
+        if _is_deva(norm):
+            return "ne"
+        rn = sum(1 for t in tokens if t in self.rn_words)
+        en = sum(1 for t in tokens if t in self.en_words)
+        if rn and rn >= en:
+            return "rn"
+        return "en"
 
     def _tense(self, tokens):
         for t in tokens:
-            for name, words in TENSE_WORDS.items():
-                if t in words:
-                    return name
+            for name, words in self.tenses.items():
+                for w in words:
+                    if t == w or (_is_deva(w) and t.startswith(w)):
+                        return name
         return "auto"
 
-    def _clock(self, norm):
-        if not re.search(r"\b(what time|what is the time|current time|time now|what date|what is the date|today s date|todays date|current date|what day is it|what day is today)\b", norm):
-            return None
-        now = datetime.now(config.NEPAL_TZ)
-        text = f"Today is {now.strftime('%A, %d %B %Y')}. The time in Nepal is {now.strftime('%I:%M %p')}."
-        bs = self.today_bs()
-        if bs:
-            text += f" In Bikram Sambat it is {bs[2]} {BS_MONTHS[bs[1] - 1]} {bs[0]} BS."
-        return text
+    def _smalltalk(self, tokens, lang):
+        for phrase, entry in self.smalltalk:
+            n = len(phrase)
+            if n == 0 or len(tokens) - n > 2:
+                continue
+            if _seq_index(tokens, phrase) is not None:
+                return _pick(entry["reply"], lang)
+        return None
 
     @staticmethod
     def _name_matches(query, name):
         name_tokens = normalize(name).split()
         if not name_tokens:
             return False
-        return all(any(nt == q or nt.startswith(q) for nt in name_tokens) for q in query)
+        for q in query:
+            hit = False
+            for nt in name_tokens:
+                if nt == q or nt.startswith(q) or (_is_deva(q) and q.startswith(nt) and len(nt) >= 2):
+                    hit = True
+                    break
+            if not hit:
+                return False
+        return True
 
-    def _profile_reply(self, tokens):
-        query = [t for t in tokens if t not in STOPWORDS and t not in self.profile_drop]
+    def _profile_reply(self, tokens, lang):
+        query = [t for t in tokens if t not in self.stopwords and t not in self.profile_drop]
         if not query:
-            return MSG["ask_person"]
+            return self._t("ask_person", lang)
+
         found = []
-        for _, user in children(self.data.get_users()):
+        for uid, user in children(self.data.get_users()):
             if not isinstance(user, dict):
                 continue
-            name = first_text(user, NAME_KEYS)
+            name = _first_text(user, NAME_KEYS)
             if name and self._name_matches(query, name):
-                found.append((0 if normalize(name).split() == query else 1, name, user))
+                exact = normalize(name).split() == query
+                found.append((0 if exact else 1, name, user))
         if not found:
-            if tokens[:2] == ["who", "is"]:
-                return None
-            return MSG["profile_none"].format(query=" ".join(query))
+            return self._t("profile_none", lang, query=" ".join(query))
+
         found.sort(key=lambda item: (item[0], normalize(item[1])))
         blocks = []
         for _, name, user in found[:MAX_PROFILES]:
-            lines = [f"Full name: {name}"]
-            role = first_text(user, ROLE_KEYS)
+            lines = [self._t("profile_name", lang, value=name)]
+            role = _first_text(user, ROLE_KEYS)
             if role:
-                lines.append(f"Role: {role.capitalize()}")
-            class_name = first_text(user, CLASS_KEYS)
+                lines.append(self._t("profile_role", lang, value=role.capitalize()))
+            class_name = _first_text(user, CLASS_KEYS)
             if class_name:
-                lines.append(f"Class: {class_name}")
-            subjects = user_subjects(user)
+                lines.append(self._t("profile_class", lang, value=class_name))
+            subjects = _user_subjects(user)
             if subjects:
-                lines.append("Assigned subjects: " + ", ".join(subjects))
-            lines.append("Profile picture: " + (user_image(user) or "not set"))
+                lines.append(self._t("profile_subjects", lang, value=", ".join(subjects)))
+            image = _user_image(user) or self._t("profile_no_picture", lang)
+            lines.append(self._t("profile_picture", lang, value=image))
             blocks.append("\n".join(lines))
         if len(found) > MAX_PROFILES:
-            blocks.append(MSG["profile_more"].format(count=len(found) - MAX_PROFILES))
+            blocks.append(self._t("profile_more", lang, count=len(found) - MAX_PROFILES))
         return "\n\n".join(blocks)
 
     def today_bs(self):
@@ -369,10 +397,9 @@ class DurbarEngine:
             log.error("BS date conversion failed: %s", type(exc).__name__)
             return None
 
-    @staticmethod
-    def _calendar_kind(norm, tokens):
-        for kind in CALENDAR_KINDS:
-            if has_phrase(norm, tokens, kind["words"]):
+    def _calendar_kind(self, norm, tokens):
+        for kind in self.calendar_kinds:
+            if _has_phrase(norm, tokens, kind["words"]):
                 return kind
         return None
 
@@ -380,7 +407,7 @@ class DurbarEngine:
     def _parse_calendar(year, node, wanted_types):
         events = []
         for month_key, month_node in children(node):
-            path_month = parse_month(month_key)
+            path_month = _parse_month(month_key)
             for type_key, type_node in children(month_node):
                 etype = type_key.strip().lower()
                 if etype not in wanted_types:
@@ -388,10 +415,10 @@ class DurbarEngine:
                 for event_id, ev in children(type_node):
                     if not isinstance(ev, dict):
                         continue
-                    sm = first_int(ev.get("startMonth"), path_month)
-                    sd = first_int(ev.get("startDay"), ev.get("day"), ev.get("date"))
-                    em = first_int(ev.get("endMonth"), sm)
-                    ed = first_int(ev.get("endDay"), sd)
+                    sm = _first_int(ev.get("startMonth"), path_month)
+                    sd = _first_int(ev.get("startDay"), ev.get("day"), ev.get("date"))
+                    em = _first_int(ev.get("endMonth"), sm)
+                    ed = _first_int(ev.get("endDay"), sd)
                     if None in (sm, sd, em, ed):
                         continue
                     if not (1 <= sm <= 12 and 1 <= em <= 12 and 1 <= sd <= 32 and 1 <= ed <= 32):
@@ -439,59 +466,80 @@ class DurbarEngine:
             found = self._select(events, tense, today)
         return found
 
-    @staticmethod
-    def _fmt_date(d):
-        return f"{d[2]} {BS_MONTHS[d[1] - 1]} {d[0]} BS"
+    def _fmt_date(self, d, lang):
+        year, month, day = d
+        year, day = str(year), str(day)
+        if lang == "ne":
+            year, day = year.translate(DEVA_DIGITS), day.translate(DEVA_DIGITS)
+        return self._t("date_fmt", lang, day=day, month=MONTHS[lang][month - 1], year=year)
 
-    def _calendar_reply(self, kind, tense):
+    def _type_name(self, etype, lang):
+        names = self.type_names.get(etype)
+        if names:
+            return _pick(names, lang)
+        return etype.replace("_", " ")
+
+    def _calendar_reply(self, kind, tense, lang):
         today = self.today_bs()
         if today is None:
-            return MSG["date_unavailable"]
-        types = kind["types"]
-        label = kind["label"]
+            return self._t("date_unavailable", lang)
+        types = set(kind["types"])
+        label = _pick(kind["labels"], lang)
         prefix = ""
+
         found = self._collect(types, tense, today)
         if tense == "present" and not found:
-            prefix = MSG["cal_now_none"].format(label=label) + "\n"
+            prefix = self._t("cal_now_none", lang, label=label) + "\n"
             found = self._collect(types, "future", today)
+
         if not found:
-            return prefix + MSG["cal_none"].format(label=label)
+            return prefix + self._t("cal_none", lang, label=label)
+
         ev = found[0]
-        type_name = TYPE_NAMES.get(ev["type"], ev["type"].replace("_", " "))
-        title = ev["title"] or f"Untitled {type_name}"
+        type_name = self._type_name(ev["type"], lang)
+        title = ev["title"] or self._t("untitled", lang, type=type_name)
         if ev["start"] == ev["end"]:
-            date_text = self._fmt_date(ev["start"])
+            date_text = self._fmt_date(ev["start"], lang)
         else:
-            date_text = f"{self._fmt_date(ev['start'])} to {self._fmt_date(ev['end'])}"
+            date_text = self._t("date_range", lang,
+                                start=self._fmt_date(ev["start"], lang),
+                                end=self._fmt_date(ev["end"], lang))
+
         if ev["start"] <= today <= ev["end"]:
-            head = MSG["cal_now"].format(title=title, end=self._fmt_date(ev["end"]))
+            head = self._t("cal_now", lang, title=title, end=self._fmt_date(ev["end"], lang))
         elif ev["end"] < today:
-            head = MSG["cal_prev"].format(label=label, title=title, type=type_name)
+            head = self._t("cal_prev", lang, label=label, title=title, type=type_name)
         else:
-            head = MSG["cal_next"].format(label=label, title=title, type=type_name)
-        lines = [head, f"Date: {date_text}"]
+            head = self._t("cal_next", lang, label=label, title=title, type=type_name)
+
+        lines = [head, self._t("cal_date", lang, date=date_text)]
         if ev["description"]:
-            lines.append(f"Details: {ev['description']}")
+            lines.append(self._t("cal_details", lang, text=ev["description"]))
         return prefix + "\n".join(lines)
 
-    def _query_terms(self, tokens):
+    def _query_terms(self, tokens, drop):
         terms = []
         for t in tokens:
-            if t in STOPWORDS or t in self.drop:
+            if t in self.stopwords or t in drop:
                 continue
-            term = self.alias_to_subject.get(t, t)
+            canon = self.alias_to_subject.get(t)
+            if canon is None and _is_deva(t):
+                for alias, c in self.alias_to_subject.items():
+                    if _is_deva(alias) and t.startswith(alias):
+                        canon = c
+                        break
+            term = canon or t
             if term not in terms:
                 terms.append(term)
         return terms
 
-    @staticmethod
-    def _hits(term, words):
-        variants = SUBJECTS.get(term, {term}) | {term}
-        return any(term_in(v, words) for v in variants)
+    def _hits(self, term, words) -> bool:
+        return any(_term_in(v, words) for v in self.variants.get(term, {term}))
 
-    def _notes_reply(self, norm, tokens):
-        wanted_formats = {f for f, words in FORMAT_WORDS.items() if has_phrase(norm, tokens, words)}
-        terms = self._query_terms(tokens)
+    def _notes_reply(self, norm, tokens, lang):
+        wanted_formats = {f for f, words in self.format_words.items() if _has_phrase(norm, tokens, words)}
+        terms = self._query_terms(tokens, self.drop)
+
         units = self.data.get_units()
         subject_keys, entries = [], []
         for subject_key, subject_node in children(units):
@@ -501,7 +549,7 @@ class DurbarEngine:
                 if not isinstance(unit, dict):
                     continue
                 unit_name = str(unit.get("name") or unit_id)
-                for _, note in children(unit.get("notes")):
+                for note_id, note in children(unit.get("notes")):
                     if not isinstance(note, dict):
                         continue
                     entries.append({
@@ -510,14 +558,19 @@ class DurbarEngine:
                         "unit": unit_name,
                         "title": str(note.get("title") or "Untitled note"),
                         "description": str(note.get("description") or ""),
-                        "created": num(note.get("createdAt")),
-                        "pdfs": urls(note.get("pdfs")),
-                        "photos": urls(note.get("photos")),
-                        "youtube": urls(note.get("youtubeLinks")),
+                        "created": _num(note.get("createdAt")),
+                        "pdfs": _urls(note.get("pdfs")),
+                        "photos": _urls(note.get("photos")),
+                        "youtube": _urls(note.get("youtubeLinks")),
                     })
-        hint = MSG["notes_subjects"].format(subjects=", ".join(subject_keys[:15])) if subject_keys else ""
+
+        subjects_hint = ""
+        if subject_keys:
+            subjects_hint = self._t("notes_subjects", lang, subjects=", ".join(subject_keys[:15]))
+
         if not terms:
-            return MSG["ask_subject"] + hint
+            return self._t("ask_subject", lang) + subjects_hint
+
         subject_terms = {t for t in terms if any(self._hits(t, e["key_words"]) for e in entries)}
         subject_terms |= {t for t in terms if any(self._hits(t, normalize(k).split()) for k in subject_keys)}
         other_terms = [t for t in terms if t not in subject_terms]
@@ -546,8 +599,10 @@ class DurbarEngine:
         else:
             pool = [e for e in entries if score(e) > 0]
             topic = " ".join(terms)
+
         if not pool:
-            return MSG["notes_none"].format(topic=topic) + hint
+            return self._t("notes_none", lang, topic=topic) + subjects_hint
+
         format_note = ""
         if wanted_formats:
             attr = {"pdf": "pdfs", "photo": "photos", "youtube": "youtube"}
@@ -555,24 +610,29 @@ class DurbarEngine:
             if filtered:
                 pool = filtered
             else:
-                joined = " and ".join(FORMAT_NAMES[f] for f in sorted(wanted_formats))
-                format_note = MSG["notes_format_missing"].format(formats=joined) + " "
+                names = self.format_names.get(lang) or self.format_names.get("en", {})
+                joined = self._t("and_word", lang).join(names[f] for f in sorted(wanted_formats))
+                format_note = self._t("notes_format_missing", lang, formats=joined) + " "
+
         pool.sort(key=lambda e: (-score(e), -e["created"]))
         shown = pool[:MAX_NOTES]
+
         if relaxed_for:
-            intro = MSG["notes_intro_relaxed"].format(other=relaxed_for, topic=topic)
+            intro = self._t("notes_intro_relaxed", lang, other=relaxed_for, topic=topic)
         else:
-            intro = MSG["notes_intro"].format(topic=topic)
+            intro = self._t("notes_intro", lang, topic=topic)
+
+        labels = self.format_labels.get(lang) or self.format_labels.get("en", {})
         lines = [format_note + intro, ""]
         for i, e in enumerate(shown, 1):
-            lines.append(f"{i}. {e['title']} (Subject: {e['subject']}, Unit: {e['unit']})")
+            lines.append(self._t("notes_item", lang, i=i, title=e["title"], subject=e["subject"], unit=e["unit"]))
             if e["description"]:
                 desc = e["description"]
                 lines.append("   " + (desc if len(desc) <= 200 else desc[:197] + "..."))
             for key, fmt in (("pdfs", "pdf"), ("photos", "photo"), ("youtube", "youtube")):
                 for url in e[key][:3]:
-                    lines.append(f"   {FORMAT_LABELS[fmt]}: {url}")
+                    lines.append(f"   {labels.get(fmt, fmt)}: {url}")
             lines.append("")
         if len(pool) > len(shown):
-            lines.append(MSG["notes_more"].format(count=len(pool) - len(shown)))
+            lines.append(self._t("notes_more", lang, count=len(pool) - len(shown)))
         return "\n".join(lines).strip()

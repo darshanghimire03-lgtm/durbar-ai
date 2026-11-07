@@ -11,3 +11,10 @@ services:
         value: 3.11.9
       - key: FIREBASE_DATABASE_URL
         sync: false   # set in the Render dashboard
+      # Optional LLM brain (leave OLLAMA_MODEL unset for rule-only mode)
+      - key: OLLAMA_MODEL
+        sync: false
+      - key: OLLAMA_HOST
+        sync: false
+      - key: OLLAMA_API_KEY
+        sync: false

@@ -1,8 +1,9 @@
-# Durbar AI v0.2
+# Durbar AI v0.5
 
-A small, rule-based knowledge assistant for the Durbar school app. Python + FastAPI + Firebase Realtime Database (REST API, no Admin SDK, no service-account key), built to run on Render's free plan.
+A knowledge assistant for the Durbar school app. Python + FastAPI + Firebase Realtime Database (REST API, no Admin SDK, no service-account key), built to run on Render's free plan.
 
-- No LLM, no paid APIs, no NLP framework: just phrase matching and keyword search.
+- **Hybrid brain.** The rule engine answers what it understands instantly and for free (holidays, notes, profiles, small talk). Anything else goes to an **Ollama** model (official `ollama` Python client), which can chat, explain topics, and look up *real* school data through tools. It never has to guess holidays or notes.
+- Ollama is **optional**: with `OLLAMA_MODEL` unset it runs exactly as the rule-only version.
 - **Read-only**: it only sends HTTP GET requests to Firebase.
 - No login/auth system in this version.
 
@@ -14,7 +15,8 @@ A small, rule-based knowledge assistant for the Durbar school app. Python + Fast
 | Next holiday / vacation / festival | `When is the next holiday?`, `Aba next chhuti kahile ho?`, `अर्को बिदा कहिले हो?` |
 | Next exam / school event | `next exam`, `next school event` |
 | Notes, PDFs, images, YouTube links | `Give me a computer note`, `Find English notes`, `Give me the mathematics PDF`, `Computer ko note deu` |
-| Anything else | `I don't know that yet. You can teach me!` |
+| Anything else (needs Ollama) | `Explain photosynthesis simply`, `Is there any celebration coming up?`, follow-ups like `and why?` |
+| Anything else (rule-only mode) | `I don't know that yet. You can teach me!` |
 
 Holiday logic: today's Bikram Sambat (BS) date is computed in Nepal time (UTC+5:45) with the `nepali-datetime` package, the calendar is read from `calendar/{BSyear}/{month}/{type}/{eventId}`, multi-day events use `startMonth/startDay/endMonth/endDay`, and the closest event that has not finished yet is returned (an event happening right now is reported as "going on right now"). If nothing is found, it says so. It never invents holidays. Records with missing date fields are skipped.
 
@@ -27,6 +29,8 @@ durbar-ai/
 ├── main.py            FastAPI app and endpoints
 ├── config.py          environment variables and settings
 ├── ai_engine.py       understanding + answering logic
+├── llm.py             Ollama brain: tools, session memory, streaming
+├── tests/             pytest suite (fake Firebase + fake Ollama)
 ├── knowledge.json     phrases, keywords, aliases (edit this to teach it)
 ├── firebase_data.py   read-only Firebase REST access (+ short cache)
 ├── requirements.txt
@@ -54,6 +58,21 @@ No private key or Admin SDK is used. The backend reads your database over its RE
 3. Everything else stays private by default (no rule = no access), so user data is not exposed.
 
 > **Important:** public read means anyone who knows your database URL can read `calendar` and `units` directly, not just through Durbar AI. Make sure those two paths contain nothing private (no emails, phone numbers or student data). The AI never returns `createdBy`, but the rule itself would still allow reading it.
+
+## 1b. Ollama setup (optional)
+
+Render's free plan cannot run a model itself, so point Durbar AI at an Ollama server you can reach:
+
+- **Ollama cloud:** `OLLAMA_HOST=https://ollama.com`, `OLLAMA_API_KEY=<key from ollama.com>`, `OLLAMA_MODEL=<a model that supports tools>`.
+- **Your own server / PC:** install Ollama, `ollama pull <model>`, expose it over HTTPS, then `OLLAMA_HOST=https://your-host`, `OLLAMA_MODEL=<model>`.
+
+Pick a model that supports tool calling (needed for school-data lookups). `/health` reports `"llm": "connected"`, `"model_missing"`, `"error"` or `"disabled"`.
+
+How it stays honest: the model gets three tools, `get_school_calendar`, `find_study_notes` and `find_person`, that run the same Firebase lookups as the rules. The system prompt forbids inventing dates, notes, links or people, tells it to treat tool text as data (not instructions), and includes today's AD and BS date. Tool rounds are capped (`LLM_MAX_TOOL_ROUNDS`, default 2); replies are capped by `OLLAMA_MAX_TOKENS`.
+
+Chat memory: send the same `session_id` with each message to keep context (last 6 turns, in memory, expires after 30 min idle, so it resets on redeploy/sleep).
+
+Cost control: LLM calls (not rule answers) are limited per client IP, 20 per minute by default (`LLM_RATE_LIMIT`, `LLM_RATE_WINDOW`). If Ollama is down, users get the normal fallback message.
 
 ## 2. Run locally
 
@@ -83,9 +102,10 @@ Optional env vars: `CACHE_TTL_SECONDS` (default 60), `ALLOWED_ORIGINS` (default 
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/` | `{"service":"Durbar AI","version":"0.2","status":"running"}` |
-| GET | `/health` | `{"status":"ok","firebase":"connected"}` (or `not_configured` / `error`) |
-| POST | `/chat` | `{"reply":"..."}` |
+| GET | `/` | `{"service":"Durbar AI","version":"0.5","status":"running","llm":"enabled"}` |
+| GET | `/health` | `{"status":"ok","firebase":"connected","llm":"connected"}` (firebase: `not_configured` / `error`; llm: `disabled` / `model_missing` / `error`) |
+| POST | `/chat` | `{"reply":"..."}`; body `{"message": "...", "session_id": "optional"}` |
+| POST | `/chat/stream` | Server-Sent Events: `data: {"delta":"..."}` chunks, then `data: {"done":true}` |
 
 Test examples:
 
@@ -109,7 +129,13 @@ curl -X POST $BASE/chat -H "Content-Type: application/json" \
 
 curl -X POST $BASE/chat -H "Content-Type: application/json" \
      -d '{"message": "Give me the mathematics PDF"}'
+
+# needs Ollama; stream tokens as they are generated
+curl -N -X POST $BASE/chat/stream -H "Content-Type: application/json" \
+     -d '{"message": "Explain gravity simply", "session_id": "demo1"}'
 ```
+
+Run the tests (no network, no Firebase, no Ollama needed): `pip install pytest && python -m pytest tests`.
 
 ## 5. Teaching it new things
 
@@ -126,5 +152,5 @@ Edit `knowledge.json`; no code changes needed:
 - Calendar month keys may be numbers (`1`-`12`) or names (`Baisakh`...). Firebase may return months as a list; both are handled.
 - Date fields used: `startMonth`, `startDay`, `endMonth`, `endDay` (single-day events may use `day`). Month falls back to the month key in the path.
 - Notes matching is basic keywords (with simple stem matching like `program`~`programming`); title, subject, unit name and description are searched. Up to 3 notes are returned, each with PDF, image and YouTube URLs.
-- The API is public and unauthenticated by design in this version. Consider adding rate limiting before wide release.
-- Tested here with a fake Firebase and a stubbed web layer (no network in the build sandbox). Do a live check of `/health` and `/chat` after deploying.
+- The API is public and unauthenticated by design in this version. Only the LLM path is rate limited; add auth before wide release.
+- Tested here with a fake Firebase and a fake Ollama client (no network in the build sandbox); FastAPI and the real `ollama` package were not installed there. Do a live check of `/health`, `/chat` and `/chat/stream` after deploying.

@@ -11,5 +11,3 @@ services:
         value: 3.11.9
       - key: FIREBASE_DATABASE_URL
         sync: false   # set in the Render dashboard
-      - key: FIREBASE_SERVICE_ACCOUNT_JSON
-        sync: false   # set in the Render dashboard (secret)

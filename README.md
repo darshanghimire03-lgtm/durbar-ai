@@ -1,9 +1,9 @@
 # Durbar AI v0.2
 
-A small, rule-based knowledge assistant for the Durbar school app. Python + FastAPI + Firebase Admin SDK, built to run on Render's free plan.
+A small, rule-based knowledge assistant for the Durbar school app. Python + FastAPI + Firebase Realtime Database (REST API, no Admin SDK, no service-account key), built to run on Render's free plan.
 
 - No LLM, no paid APIs, no NLP framework: just phrase matching and keyword search.
-- **Read-only**: it never writes to Firebase.
+- **Read-only**: it only sends HTTP GET requests to Firebase.
 - No login/auth system in this version.
 
 ## What it can do
@@ -28,7 +28,7 @@ durbar-ai/
 ├── config.py          environment variables and settings
 ├── ai_engine.py       understanding + answering logic
 ├── knowledge.json     phrases, keywords, aliases (edit this to teach it)
-├── firebase_data.py   read-only Firebase access (+ short cache)
+├── firebase_data.py   read-only Firebase REST access (+ short cache)
 ├── requirements.txt
 ├── render.yaml
 ├── .env.example
@@ -37,9 +37,10 @@ durbar-ai/
 
 ## 1. Firebase setup
 
-1. Firebase Console -> **Project settings -> Service accounts -> Generate new private key**. A JSON file downloads. Keep it secret. Never commit it or put it in the Android app.
-2. Copy your Realtime Database URL (Realtime Database page), e.g. `https://your-project-default-rtdb.firebaseio.com`.
-3. Recommended database rules (this backend only needs `calendar` and `units`; the Android app keeps its own rules as needed, so merge rather than overwrite):
+No private key or Admin SDK is used. The backend reads your database over its REST URL, so access is controlled entirely by your **database rules**.
+
+1. Firebase Console -> **Realtime Database**. Copy the database URL, e.g. `https://darbarhigh-4c642-default-rtdb.firebaseio.com`.
+2. Open the **Rules** tab and allow public read on **only** `calendar` and `units`, with writes blocked everywhere. Merge this with your existing rules (the Android app may need others):
 
 ```json
 {
@@ -50,14 +51,16 @@ durbar-ai/
 }
 ```
 
-> **Important:** the Admin SDK bypasses database rules. Safety here comes from the code: it only reads `calendar` and `units`, never writes, and never returns `createdBy` or any user data. If your `calendar` or `units` contain anything private, remove it before using this version.
+3. Everything else stays private by default (no rule = no access), so user data is not exposed.
+
+> **Important:** public read means anyone who knows your database URL can read `calendar` and `units` directly, not just through Durbar AI. Make sure those two paths contain nothing private (no emails, phone numbers or student data). The AI never returns `createdBy`, but the rule itself would still allow reading it.
 
 ## 2. Run locally
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # then fill in the two values (JSON on ONE line)
+cp .env.example .env        # then set FIREBASE_DATABASE_URL
 uvicorn main:app --reload
 ```
 
@@ -69,9 +72,7 @@ Open http://127.0.0.1:8000/docs for interactive docs.
 2. Render -> **New -> Blueprint** (uses `render.yaml`) or **New -> Web Service** with:
    - Build command: `pip install -r requirements.txt`
    - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-3. In **Environment**, add:
-   - `FIREBASE_DATABASE_URL`: your database URL
-   - `FIREBASE_SERVICE_ACCOUNT_JSON`: paste the **entire** JSON file contents
+3. In **Environment**, add `FIREBASE_DATABASE_URL` with your database URL (that is the only secret-free variable you need).
 4. Deploy, then open `https://YOUR-SERVICE.onrender.com/health`. `"firebase": "connected"` means it works.
 
 Free-plan services sleep after inactivity, so the first request can take ~30-50 seconds.

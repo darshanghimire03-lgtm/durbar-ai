@@ -1,6 +1,6 @@
 """Central configuration for Durbar AI.
 
-All secrets come from environment variables (set them in the Render dashboard).
+Settings come from environment variables (set them in the Render dashboard).
 For local development you may put them in a `.env` file (see .env.example);
 this tiny loader reads it so we do not need an extra dependency.
 """
@@ -39,9 +39,8 @@ def _int_env(name: str, default: int) -> int:
 SERVICE_NAME = "Durbar AI"
 VERSION = "0.2"
 
-# --- Firebase (secrets: never hard-code, never ship in the Android APK) ---
+# --- Firebase Realtime Database (read through the public REST API, no key needed) ---
 FIREBASE_DATABASE_URL = os.getenv("FIREBASE_DATABASE_URL", "").strip()
-FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
 
 # The ONLY database paths this backend ever reads (both are public school info).
 CALENDAR_PATH = "calendar"

@@ -1,11 +1,16 @@
-"""Read-only access to Firebase Realtime Database (Firebase Admin SDK).
+"""Read-only access to Firebase Realtime Database through its public REST API.
 
-This module only ever calls `.get()`. It never writes, updates or deletes, and it
-only reads the two public paths listed in config.py (calendar and units).
+No Admin SDK and no service-account key are needed. The database rules decide
+what can be read: make only `calendar` and `units` publicly readable (see README).
+
+This module only performs HTTP GET requests. It never writes, updates or deletes,
+and it only reads the two paths listed in config.py.
 """
 import json
 import logging
 import time
+import urllib.error
+import urllib.request
 
 import config
 
@@ -31,66 +36,64 @@ def children(node):
 
 class FirebaseData:
     def __init__(self):
-        self.status = "not_configured"  # not_configured | configured | error
+        self.status = "not_configured"  # not_configured | configured
         self.error = None
-        self._db = None
+        self._base = None
         self._cache = {}
 
-    # ---- connection -------------------------------------------------
+    # ---- setup --------------------------------------------------------
     def connect(self) -> None:
-        if not config.FIREBASE_DATABASE_URL or not config.FIREBASE_SERVICE_ACCOUNT_JSON:
+        url = config.FIREBASE_DATABASE_URL.rstrip("/")
+        if not url.startswith("https://"):
+            self._base = None
             self.status = "not_configured"
-            log.warning("Firebase env vars are missing; data features are disabled.")
+            log.warning("FIREBASE_DATABASE_URL is missing or not https; data features are disabled.")
             return
-        try:
-            import firebase_admin
-            from firebase_admin import credentials, db
-
-            info = json.loads(config.FIREBASE_SERVICE_ACCOUNT_JSON)
-            try:
-                firebase_admin.get_app()
-            except ValueError:
-                firebase_admin.initialize_app(
-                    credentials.Certificate(info),
-                    {"databaseURL": config.FIREBASE_DATABASE_URL},
-                )
-            self._db = db
-            self.status = "configured"
-            self.error = None
-            log.info("Firebase initialised.")
-        except Exception as exc:  # never log the credentials themselves
-            self._db = None
-            self.status = "error"
-            self.error = type(exc).__name__
-            log.error("Firebase initialisation failed: %s", self.error)
+        self._base = url
+        self.status = "configured"
+        log.info("Firebase REST reader ready.")
 
     @property
     def connected(self) -> bool:
-        return self._db is not None
+        return self._base is not None
+
+    # ---- HTTP ---------------------------------------------------------
+    def _http_get(self, url: str):
+        req = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def _fetch(self, path: str, query: str = ""):
+        if self._base is None:
+            raise DataUnavailable("Firebase is not configured")
+        url = f"{self._base}/{path}.json{query}"
+        try:
+            return self._http_get(url)
+        except urllib.error.HTTPError as exc:
+            reason = "permission_denied" if exc.code in (401, 403) else f"http_{exc.code}"
+            log.error("Firebase read failed for %s: %s", path, reason)
+            raise DataUnavailable(reason) from exc
+        except Exception as exc:
+            log.error("Firebase read failed for %s: %s", path, type(exc).__name__)
+            raise DataUnavailable(type(exc).__name__) from exc
 
     def check(self):
         """Used by /health. Returns (status, detail)."""
-        if self._db is None:
+        if self._base is None:
             return self.status, self.error
         try:
-            self._db.reference(config.CALENDAR_PATH).order_by_key().limit_to_first(1).get()
+            self._fetch(config.CALENDAR_PATH, "?shallow=true")  # keys only: very light
             return "connected", None
-        except Exception as exc:
-            return "error", type(exc).__name__
+        except DataUnavailable as exc:
+            return "error", str(exc)
 
-    # ---- reads (cached briefly to save Firebase quota) --------------
+    # ---- reads (cached briefly to save bandwidth) ---------------------
     def _read(self, path: str):
-        if self._db is None:
-            raise DataUnavailable("Firebase is not connected")
         now = time.monotonic()
         hit = self._cache.get(path)
         if hit and now - hit[0] < config.CACHE_TTL_SECONDS:
             return hit[1]
-        try:
-            value = self._db.reference(path).get()
-        except Exception as exc:
-            log.error("Firebase read failed for %s: %s", path, type(exc).__name__)
-            raise DataUnavailable(str(type(exc).__name__)) from exc
+        value = self._fetch(path)
         self._cache[path] = (now, value)
         return value
 

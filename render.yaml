@@ -1,20 +1,19 @@
 services:
   - type: web
     name: durbar-ai
-    runtime: python
+    runtime: node
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    buildCommand: npm install
+    startCommand: npm start
     healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
       - key: FIREBASE_DATABASE_URL
-        sync: false   # set in the Render dashboard
-      # Optional LLM brain (leave OLLAMA_MODEL unset for rule-only mode)
-      - key: OLLAMA_MODEL
         sync: false
-      - key: OLLAMA_HOST
+      - key: FIREBASE_DB_SECRET
         sync: false
-      - key: OLLAMA_API_KEY
+      - key: APP_API_KEY
         sync: false

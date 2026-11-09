@@ -40,13 +40,30 @@ export const tools = [
     function: {
       name: "get_study_material",
       description:
-        "Read units and notes (PDFs, photos, YouTube lectures) by subject. The app shows the notes as note cards automatically. Call without a subject to list available subjects.",
+        "List or show units and notes (PDFs, photos, YouTube lectures) by subject. The app shows the notes as note cards automatically. Call without a subject to list available subjects. Use this only to show or list notes, not to read what is inside the PDFs.",
       parameters: {
         type: "object",
         properties: {
           subject: { type: "string", description: "Subject name, e.g. Computer Science" },
           unit_name: { type: "string", description: "Unit name filter" },
           keyword: { type: "string", description: "Keyword to match in note title or description" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_pdf_notes",
+      description:
+        "Open and read the text inside the PDF notes of a subject and return the most relevant pages. Use when the user asks what a PDF or note says, asks to explain, summarize or check a PDF, or asks a study question that the subject notes may answer. Call without a subject to list available subjects.",
+      parameters: {
+        type: "object",
+        properties: {
+          subject: { type: "string", description: "Subject name, e.g. Computer Science" },
+          unit_name: { type: "string", description: "Unit name filter, e.g. Unit 1" },
+          note_keyword: { type: "string", description: "Keyword to match in note title or description" },
+          question: { type: "string", description: "The user's question or topic to find inside the PDFs" },
         },
       },
     },

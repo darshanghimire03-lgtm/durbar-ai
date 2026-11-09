@@ -5,24 +5,27 @@ import Groq from "groq-sdk";
 
 const PORT = process.env.PORT || 3000;
 const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
-const APP_API_KEY = process.env.APP_API_KEY;
 const DB_URL = (process.env.FIREBASE_DATABASE_URL || "").replace(/\/+$/, "");
-const DB_SECRET = process.env.FIREBASE_DB_SECRET || "";
 
 const BS_MONTHS = [
   "Baisakh", "Jestha", "Asar", "Shrawan", "Bhadra", "Ashwin",
   "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra",
 ];
 const EVENT_TYPES = ["exam", "test", "festival", "school_event", "emergency", "vacation"];
-const STAFF_ROLES = ["professor", "captain", "moderator"];
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(cors());
 app.use(express.json({ limit: "100kb" }));
 
 const buckets = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of buckets) if (now > v.reset) buckets.delete(k);
+}, 60000).unref();
+
 function rateLimit(req, res, next) {
   const key = req.ip;
   const now = Date.now();
@@ -33,15 +36,8 @@ function rateLimit(req, res, next) {
   }
   entry.count += 1;
   buckets.set(key, entry);
-  if (entry.count > 20) {
+  if (entry.count > 15) {
     return res.status(429).json({ error: "Too many requests. Please wait a minute." });
-  }
-  next();
-}
-
-function auth(req, res, next) {
-  if (APP_API_KEY && req.headers["x-api-key"] !== APP_API_KEY) {
-    return res.status(401).json({ error: "Unauthorized" });
   }
   next();
 }
@@ -51,16 +47,11 @@ const has = (v, q) => norm(v).includes(norm(q));
 const seg = (...parts) => parts.map((x) => encodeURIComponent(String(x))).join("/");
 
 async function dbGet(path, shallow = false) {
-  const params = new URLSearchParams();
-  if (DB_SECRET) params.set("auth", DB_SECRET);
-  if (shallow) params.set("shallow", "true");
-  const query = params.toString();
+  const query = shallow ? "?shallow=true" : "";
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const r = await fetch(`${DB_URL}/${path}.json${query ? `?${query}` : ""}`, {
-      signal: controller.signal,
-    });
+    const r = await fetch(`${DB_URL}/${path}.json${query}`, { signal: controller.signal });
     if (!r.ok) throw new Error(`RTDB ${r.status} on ${path}`);
     return await r.json();
   } finally {
@@ -237,30 +228,12 @@ async function getAppUpdate() {
   };
 }
 
-async function getStaff({ subject, role } = {}) {
-  const data = await dbGet("users");
-  let list = entries(data)
-    .map(([, u]) => u)
-    .filter((u) => u && typeof u === "object" && STAFF_ROLES.includes(norm(u.role)));
-  if (role) list = list.filter((u) => norm(u.role) === norm(role));
-  if (subject) list = list.filter((u) => has(u.assignedSubject, subject));
-  return {
-    count: list.length,
-    staff: list.slice(0, 30).map((u) => ({
-      name: u.fullName,
-      role: u.role,
-      subject: u.assignedSubject || null,
-    })),
-  };
-}
-
 const handlers = {
   get_calendar_events: getCalendarEvents,
   get_national_days: getNationalDays,
   get_study_material: getStudyMaterial,
   get_mock_questions: getMockQuestions,
   get_app_update: getAppUpdate,
-  get_staff: getStaff,
 };
 
 const tools = [
@@ -337,32 +310,18 @@ const tools = [
       parameters: { type: "object", properties: {} },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "get_staff",
-      description: "List professors, captains and moderators with their roles and assigned subjects.",
-      parameters: {
-        type: "object",
-        properties: {
-          subject: { type: "string", description: "Assigned subject filter" },
-          role: { type: "string", enum: STAFF_ROLES, description: "Role filter" },
-        },
-      },
-    },
-  },
 ];
 
 const SYSTEM_PROMPT = `You are Durbar AI, the official assistant inside the Durbar app.
 Reply in the same language the user writes in. Keep answers short and easy to read on a phone.
-For anything about exams, tests, festivals, events, vacations, study notes, mock questions, app updates or staff, ALWAYS call the matching tool and answer only from its result.
+For anything about exams, tests, festivals, events, vacations, study notes, mock questions or app updates, ALWAYS call the matching tool and answer only from its result.
 If a tool returns nothing, say that information is not available yet. Never invent dates, times, links or names.
 The school calendar uses Bikram Sambat (BS). Months: 1 Baisakh, 2 Jestha, 3 Asar, 4 Shrawan, 5 Bhadra, 6 Ashwin, 7 Kartik, 8 Mangsir, 9 Poush, 10 Magh, 11 Falgun, 12 Chaitra.
 Write dates like "Kartik 25, 2083". Format exams as: Subject - Date - Start to End.
 For "upcoming", "next" or "tomorrow" questions use the BS date given below when available and only show events on or after it.
 For mock questions, show each question with lettered options A-D, then list the answers at the end under "Answers".
 When sharing notes, include the PDF names with their links and YouTube links.
-Never share phone numbers, emails or any private user data.
+Never share phone numbers, emails or any private user data. You have no access to user accounts or personal data.
 For general questions unrelated to the app, answer helpfully and concisely.`;
 
 function buildSystemMessage(body) {
@@ -391,7 +350,7 @@ function buildSystemMessage(body) {
 app.get("/", (req, res) => res.json({ name: "Durbar AI", status: "ok", model: MODEL }));
 app.get("/health", (req, res) => res.status(200).send("ok"));
 
-app.post("/chat", rateLimit, auth, async (req, res) => {
+app.post("/chat", rateLimit, async (req, res) => {
   try {
     const message = String(req.body?.message ?? "").trim();
     if (!message) return res.status(400).json({ error: "message is required" });

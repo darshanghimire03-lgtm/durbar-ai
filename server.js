@@ -7,6 +7,7 @@ import { buildSystemMessage } from "./lib/prompt.js";
 import { availableModels, defaultModel, findModel, publicModel } from "./lib/models.js";
 import { createChat } from "./lib/llm.js";
 import { handlers } from "./tools/handlers.js";
+import { tableToHtml } from "./lib/table.js";
 
 const PORT = process.env.PORT || 3000;
 
@@ -42,11 +43,11 @@ function parseSupported(raw) {
   return new Set(raw.filter((t) => CARD_TYPES.includes(t)));
 }
 
-function finalReply(content, cards) {
+function finalReply(content, shown) {
   let reply = cleanReply(content);
-  if (cards) {
+  if (shown) {
     const tooLong = reply.length > 160 || reply.includes("\n") || /https?:\/\//i.test(reply);
-    if (!reply || tooLong) reply = introFor(cards);
+    if (!reply || tooLong) reply = introFor(shown);
   } else if (!reply) {
     reply = "Sorry, I could not answer that.";
   }
@@ -102,14 +103,22 @@ app.post("/chat", rateLimit, async (req, res) => {
 
     const chat = createChat(entry, buildSystemMessage(req.body), cleanHistory, message);
 
+    const ctx = { sessionKey: String(req.body?.session_id || req.ip).slice(0, 100) };
+
     let cards = null;
+    let table = null;
 
     for (let i = 0; i < 6; i++) {
       const { text, calls } = await chat.step();
 
       if (calls.length === 0) {
-        const reply = finalReply(text, cards);
-        const body = cards ? { reply, cards } : { reply };
+        const reply = finalReply(text, cards || table);
+        const body = { reply };
+        if (cards) body.cards = cards;
+        if (table) {
+          body.table = table;
+          body.html = tableToHtml(table);
+        }
         return res.json({ ...body, model: entry.id });
       }
 
@@ -122,16 +131,18 @@ app.post("/chat", rateLimit, async (req, res) => {
           if (!fn) {
             forModel = { error: "Unknown tool" };
           } else {
-            const { data, brief, card } = await fn(call.args);
-            const shown = Boolean(card) && supports.has(card.type);
+            const { data, brief, card, table: tbl } = await fn(call.args, ctx);
+            const shown = !tbl && Boolean(card) && supports.has(card.type);
             cards = shown ? card : null;
-            forModel = shown
-              ? { ...(brief || { count: data?.count }), cards_shown: true }
-              : { ...data, cards_shown: false };
+            table = tbl || null;
+            if (tbl) forModel = { ...(brief || { count: data?.count }), table_shown: true };
+            else if (shown) forModel = { ...(brief || { count: data?.count }), cards_shown: true };
+            else forModel = { ...data, cards_shown: false };
           }
         } catch (err) {
           console.error(err);
           cards = null;
+          table = null;
           forModel = { error: "Failed to read data" };
         }
         results.push({ id: call.id, apiId: call.apiId, name: call.name, response: forModel });

@@ -16,11 +16,23 @@ class Settings(BaseSettings):
     people_path: str = "users"
     cache_ms: int = 20000
 
-    port: int = 3000
     rate_limit_per_minute: int = 15
     cors_origins: str = "*"
     enable_fallback: bool = True
     log_level: str = "INFO"
+
+    upstash_redis_rest_url: str = ""
+    upstash_redis_rest_token: str = ""
+    kv_rest_api_url: str = ""
+    kv_rest_api_token: str = ""
+
+    @property
+    def redis_url(self) -> str:
+        return (self.upstash_redis_rest_url or self.kv_rest_api_url).rstrip("/")
+
+    @property
+    def redis_token(self) -> str:
+        return self.upstash_redis_rest_token or self.kv_rest_api_token
 
     @property
     def cors_origin_list(self) -> list[str]:

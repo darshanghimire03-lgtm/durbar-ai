@@ -16,7 +16,7 @@ vercel link
 bash scripts/set-vercel-env.sh .env   # or add vars in the dashboard
 vercel --prod
 ```
-Check: `https://<your-app>.vercel.app/health` -> `ok`
+Check: `https://durbar-ai.vercel.app/health` -> `ok`
 
 ## Local dev
 ```bash

@@ -1,6 +1,9 @@
-import { BS_MONTHS } from "./helpers.js";
+from datetime import datetime, timezone
+from typing import Any
 
-export const SYSTEM_PROMPT = `You are Durbar AI, the smart study assistant inside the Durbar school app. You can answer ANY question: school subjects, computer science, math, science, general knowledge, coding, writing, advice and more. You also have tools for Durbar app data:
+from app.utils.text import BS_MONTHS, clip, to_int
+
+SYSTEM_PROMPT = """You are Durbar AI, the smart study assistant inside the Durbar school app. You can answer ANY question: school subjects, computer science, math, science, general knowledge, coding, writing, advice and more. You also have tools for Durbar app data:
 - exam schedules, tests, festivals, school events, emergencies, vacations and national days
 - study notes, units, PDFs and YouTube lectures
 - mock test questions
@@ -33,27 +36,36 @@ The school calendar uses Bikram Sambat (BS). Months: 1 Baisakh, 2 Jestha, 3 Asar
 Write dates like "Kartik 25, 2083". Format exams as: Subject - Date - Start to End.
 For "upcoming", "next" or "tomorrow" questions use the BS date given below when available and only show events on or after it.
 For mock questions in plain text, show each question with a number and lettered options A-D. Never show answers.
-When sharing notes in plain text, include the PDF names with their links and YouTube links.`;
+When sharing notes in plain text, include the PDF names with their links and YouTube links."""
 
-export function buildSystemMessage(body) {
-  const lines = [SYSTEM_PROMPT];
-  lines.push(`Today's date in AD is ${new Date().toISOString().slice(0, 10)}.`);
-  const t = body?.today_bs;
-  const y = Number(t?.year);
-  const m = Number(t?.month);
-  const d = Number(t?.day);
-  if (y > 2000 && y < 2200 && m >= 1 && m <= 12 && d >= 1 && d <= 32) {
-    lines.push(`Today's date in BS is ${BS_MONTHS[m - 1]} ${d}, ${y} (year ${y}, month ${m}, day ${d}).`);
-  }
-  const u = body?.user;
-  if (u && typeof u === "object") {
-    const clip = (v) => String(v ?? "").replace(/[\r\n]+/g, " ").slice(0, 60);
-    const parts = [];
-    if (u.fullName) parts.push(`name ${clip(u.fullName)}`);
-    if (u.role) parts.push(`role ${clip(u.role)}`);
-    if (u.classLevel) parts.push(`class ${clip(u.classLevel)}`);
-    if (u.section) parts.push(`section ${clip(u.section)}`);
-    if (parts.length) lines.push(`The current user: ${parts.join(", ")}.`);
-  }
-  return lines.join("\n");
-}
+
+def build_system_message(today_bs: Any = None, user: Any = None) -> str:
+    lines = [SYSTEM_PROMPT]
+    lines.append(f"Today's date in AD is {datetime.now(timezone.utc).date().isoformat()}.")
+
+    if isinstance(today_bs, dict):
+        y, m, d = to_int(today_bs.get("year")), to_int(today_bs.get("month")), to_int(today_bs.get("day"))
+        if 2000 < y < 2200 and 1 <= m <= 12 and 1 <= d <= 32:
+            lines.append(f"Today's date in BS is {BS_MONTHS[m - 1]} {d}, {y} (year {y}, month {m}, day {d}).")
+
+    if isinstance(user, dict):
+        def part(label: str, key: str) -> str | None:
+            value = user.get(key)
+            if not value:
+                return None
+            return f"{label} {' '.join(clip(value, 60).split())}"
+
+        parts = [
+            p
+            for p in (
+                part("name", "fullName"),
+                part("role", "role"),
+                part("class", "classLevel"),
+                part("section", "section"),
+            )
+            if p
+        ]
+        if parts:
+            lines.append(f"The current user: {', '.join(parts)}.")
+
+    return "\n".join(lines)

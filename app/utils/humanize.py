@@ -1,9 +1,6 @@
 import re
 from typing import Any
 
-_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
-_HEADING = re.compile(r"^#{1,6}\s*", re.M)
-_BULLET = re.compile(r"^\s*[*•]\s+", re.M)
 _EM_DASH = re.compile(r"\s*—\s*")
 _OPENER = re.compile(
     r"^\s*(?:certainly|absolutely|of course|great question|good question|excellent question)[!.,]\s*"
@@ -23,11 +20,7 @@ _SWAPS = [
 
 
 def polish(text: str, opener: bool = False) -> str:
-    out = _LINK.sub(r"\1: \2", text)
-    out = out.replace("**", "").replace("__", "")
-    out = _HEADING.sub("", out)
-    out = _BULLET.sub("- ", out)
-    out = _EM_DASH.sub(", ", out)
+    out = _EM_DASH.sub(", ", text)
     for pattern, replacement in _SWAPS:
         out = pattern.sub(replacement, out)
     if opener:
@@ -52,15 +45,7 @@ class StreamCleaner:
 
     def _cut(self) -> int:
         buf = self.buffer
-        cut = max(buf.rfind(" "), buf.rfind("\n")) + 1
-        if cut <= 0:
-            return 0
-        open_at = buf.rfind("[", 0, cut)
-        if open_at != -1 and cut - open_at < 200:
-            inside = buf[open_at:cut]
-            if "\n" not in inside and ")" not in inside:
-                return open_at
-        return cut
+        return max(buf.rfind(" "), buf.rfind("\n")) + 1
 
     def _emit(self, text: str) -> str:
         if not text:

@@ -22,13 +22,27 @@ def _parse_args(raw: Any) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _user_content(message: str, image: dict | None) -> Any:
+    if not image:
+        return message
+    return [
+        {"type": "text", "text": message},
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:{image['mime_type']};base64,{image['data']}"},
+        },
+    ]
+
+
 class OpenAICompatSession(ChatSession):
-    def __init__(self, entry: ModelEntry, system: str, history: list[dict], message: str) -> None:
+    def __init__(
+        self, entry: ModelEntry, system: str, history: list[dict], message: str, image: dict | None = None
+    ) -> None:
         self.entry = entry
         self.messages: list[dict[str, Any]] = [
             {"role": "system", "content": system},
             *history,
-            {"role": "user", "content": message},
+            {"role": "user", "content": _user_content(message, image)},
         ]
 
     def _request(self) -> tuple[str, dict[str, str], dict[str, Any], float]:

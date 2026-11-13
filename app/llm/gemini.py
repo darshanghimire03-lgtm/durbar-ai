@@ -43,7 +43,7 @@ def _gemini_tools() -> list[dict]:
 GEMINI_TOOLS = _gemini_tools()
 
 
-def to_gemini_contents(history: list[dict], message: str) -> list[dict]:
+def to_gemini_contents(history: list[dict], message: str, image: dict | None = None) -> list[dict]:
     out: list[dict] = []
     for m in history:
         content = m.get("content") or ""
@@ -61,14 +61,21 @@ def to_gemini_contents(history: list[dict], message: str) -> list[dict]:
         out[-1]["parts"][0]["text"] += "\n" + message
     else:
         out.append({"role": "user", "parts": [{"text": message}]})
+
+    if image:
+        out[-1]["parts"].append(
+            {"inlineData": {"mimeType": image["mime_type"], "data": image["data"]}}
+        )
     return out
 
 
 class GeminiSession(ChatSession):
-    def __init__(self, entry: ModelEntry, system: str, history: list[dict], message: str) -> None:
+    def __init__(
+        self, entry: ModelEntry, system: str, history: list[dict], message: str, image: dict | None = None
+    ) -> None:
         self.entry = entry
         self.system = system
-        self.contents = to_gemini_contents(history, message)
+        self.contents = to_gemini_contents(history, message, image)
 
     async def stream(self) -> AsyncIterator[StreamEvent]:
         payload = {

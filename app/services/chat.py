@@ -68,9 +68,15 @@ async def _run_tool(call: Any, ctx: ToolContext, supports: set[str]) -> tuple[di
 
 
 async def _converse(
-    entry: ModelEntry, system: str, history: list[dict], message: str, supports: set[str], ctx: ToolContext
+    entry: ModelEntry,
+    system: str,
+    history: list[dict],
+    message: str,
+    supports: set[str],
+    ctx: ToolContext,
+    image: dict | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    session = create_session(entry, system, history, message)
+    session = create_session(entry, system, history, message, image)
     cards: dict | None = None
 
     for _ in range(MAX_ROUNDS):
@@ -118,13 +124,19 @@ async def _converse(
 
 
 async def answer_stream(
-    entry: ModelEntry, system: str, history: list[dict], message: str, supports: set[str], ctx: ToolContext
+    entry: ModelEntry,
+    system: str,
+    history: list[dict],
+    message: str,
+    supports: set[str],
+    ctx: ToolContext,
+    image: dict | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     steps: list[str] = []
     last_error: LLMError | None = None
-    for candidate in [entry, *fallback_models(entry)]:
+    for candidate in [entry, *fallback_models(entry, vision_only=image is not None)]:
         try:
-            async for event in _converse(candidate, system, history, message, supports, ctx):
+            async for event in _converse(candidate, system, history, message, supports, ctx, image):
                 if event["type"] == "status":
                     steps.append(event["text"])
                 elif event["type"] == "done":
@@ -144,10 +156,16 @@ async def answer_stream(
 
 
 async def answer(
-    entry: ModelEntry, system: str, history: list[dict], message: str, supports: set[str], ctx: ToolContext
+    entry: ModelEntry,
+    system: str,
+    history: list[dict],
+    message: str,
+    supports: set[str],
+    ctx: ToolContext,
+    image: dict | None = None,
 ) -> dict[str, Any]:
     done: dict[str, Any] | None = None
-    async for event in answer_stream(entry, system, history, message, supports, ctx):
+    async for event in answer_stream(entry, system, history, message, supports, ctx, image):
         if event["type"] == "done":
             done = event
     if done is None:

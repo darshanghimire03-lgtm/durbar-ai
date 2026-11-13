@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from app.core.errors import AppError
 from app.core.rate_limit import client_ip, rate_limit
 from app.llm.base import LLMError
-from app.llm.registry import ModelEntry, available_models, default_model, find_model, public_model
+from app.llm.registry import ModelEntry, available_models, default_model, find_model, public_model, vision_model
 from app.schemas import ChatRequest
 from app.services.cards import CARD_TYPES, DEFAULT_SUPPORTED
 from app.services.chat import answer, answer_stream
@@ -17,6 +17,7 @@ from app.services.firebase import get_ai_instructions
 from app.services.guard import MOCK_REPLY, is_mock_request
 from app.services.identity import Identity, resolve_identity
 from app.services.prompt import build_system_message
+from app.services.vision import DEFAULT_IMAGE_MESSAGE, IMAGE_NOTE, fetch_image
 from app.tools.base import ToolContext
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ class Prepared:
     ctx: ToolContext
     who: dict[str, Any]
     blocked: bool
+    image: dict[str, str] | None
 
 
 def _supported_cards(raw: object) -> set[str]:
@@ -73,10 +75,16 @@ def _failure(exc: LLMError) -> tuple[int, str]:
 
 async def _prepare(body: ChatRequest, request: Request) -> Prepared:
     message = str(body.message or "").strip()
+    has_image_link = isinstance(body.image, str) and bool(body.image.strip())
+    if not message and has_image_link:
+        message = DEFAULT_IMAGE_MESSAGE
     if not message:
         raise AppError(400, "message is required")
     if len(message) > MAX_MESSAGE_CHARS:
         raise AppError(400, "message too long")
+
+    blocked = is_mock_request(message)
+    image = None if blocked else await fetch_image(body.image)
 
     if body.model:
         entry = find_model(str(body.model))
@@ -89,13 +97,19 @@ async def _prepare(body: ChatRequest, request: Request) -> Prepared:
     if not entry:
         raise AppError(503, "No AI model is configured on the server.")
 
-    blocked = is_mock_request(message)
+    if image and not entry.vision:
+        entry = vision_model()
+        if not entry:
+            raise AppError(503, "No AI model that can read photos is configured on the server.")
+
     identity = Identity()
     system = ""
     if not blocked:
         identity = await resolve_identity(body.user, body.id_token)
         standing = await get_ai_instructions()
         system = build_system_message(body.today_bs, identity, standing)
+        if image:
+            system = f"{system}\n{IMAGE_NOTE}"
 
     return Prepared(
         entry=entry,
@@ -106,6 +120,7 @@ async def _prepare(body: ChatRequest, request: Request) -> Prepared:
         ctx=ToolContext(session_key=str(body.session_id or client_ip(request))[:100]),
         who=_who(identity),
         blocked=blocked,
+        image=image,
     )
 
 
@@ -121,7 +136,7 @@ async def _events(prep: Prepared) -> AsyncIterator[str]:
         return
     try:
         async for event in answer_stream(
-            prep.entry, prep.system, prep.history, prep.message, prep.supports, prep.ctx
+            prep.entry, prep.system, prep.history, prep.message, prep.supports, prep.ctx, prep.image
         ):
             yield _pack(event)
     except LLMError as exc:
@@ -162,7 +177,9 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
             {"reply": MOCK_REPLY, "model": prep.entry.id, "steps": [], "user": prep.who}
         )
     try:
-        result = await answer(prep.entry, prep.system, prep.history, prep.message, prep.supports, prep.ctx)
+        result = await answer(
+            prep.entry, prep.system, prep.history, prep.message, prep.supports, prep.ctx, prep.image
+        )
     except LLMError as exc:
         status, message = _failure(exc)
         raise AppError(status, message) from exc

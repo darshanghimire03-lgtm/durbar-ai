@@ -14,3 +14,4 @@ class ChatRequest(BaseModel):
     id_token: Any = None
     today_bs: Any = None
     session_id: Any = None
+    image: Any = None

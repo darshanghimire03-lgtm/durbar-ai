@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any, AsyncIterator
 from urllib.parse import urlparse
 
@@ -15,11 +16,14 @@ logger = logging.getLogger(__name__)
 MAX_ROUNDS = 6
 MAX_REPLY_WITH_CARD = 160
 GIVE_UP_REPLY = "Sorry, I could not complete that request. Please try again."
+MAX_REPLY_IMAGES = 8
+IMAGE_MD = re.compile(r"!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 
 STATUS_TEXT = {
     "search_web": "Searching the web...",
     "read_webpage": "Reading the web page...",
     "read_pdf_notes": "Reading all the PDF notes...",
+    "read_note_photos": "Reading the note photos...",
     "get_study_material": "Looking up study material...",
     "get_calendar_events": "Checking the school calendar...",
     "get_national_days": "Checking national days...",
@@ -55,16 +59,31 @@ def final_reply(content: str, shown: dict | None) -> str:
     return reply or "Sorry, I could not answer that."
 
 
-async def _run_tool(call: Any, ctx: ToolContext, supports: set[str]) -> tuple[dict, dict | None]:
+def scrub_images(reply: str, allowed: set[str]) -> tuple[str, list[dict]]:
+    """Keep only markdown images whose URL came from a tool result. Returns the text and the kept images."""
+    kept: list[dict] = []
+
+    def swap(match: re.Match) -> str:
+        url = match.group(2)
+        if url not in allowed or any(k["url"] == url for k in kept) or len(kept) >= MAX_REPLY_IMAGES:
+            return ""
+        kept.append({"url": url, "title": match.group(1).strip()})
+        return match.group(0)
+
+    out = IMAGE_MD.sub(swap, reply)
+    return re.sub(r"\n{3,}", "\n\n", out).strip(), kept
+
+
+async def _run_tool(call: Any, ctx: ToolContext, supports: set[str]) -> tuple[dict, dict | None, list[str]]:
     handler = HANDLERS.get(call.name)
     if handler is None:
-        return {"error": "Unknown tool"}, None
+        return {"error": "Unknown tool"}, None, []
 
     result = await handler(call.args if isinstance(call.args, dict) else {}, ctx)
     shown = result.card if result.card and result.card.get("type") in supports else None
     if shown:
-        return {**(result.brief or {"count": result.data.get("count")}), "cards_shown": True}, shown
-    return {**result.data, "cards_shown": False}, None
+        return {**(result.brief or {"count": result.data.get("count")}), "cards_shown": True}, shown, result.images
+    return {**result.data, "cards_shown": False}, None, result.images
 
 
 async def _converse(
@@ -78,6 +97,7 @@ async def _converse(
 ) -> AsyncIterator[dict[str, Any]]:
     session = create_session(entry, system, history, message, image)
     cards: dict | None = None
+    allowed_images: set[str] = set()
 
     for _ in range(MAX_ROUNDS):
         cleaner = StreamCleaner()
@@ -98,7 +118,10 @@ async def _converse(
             yield {"type": "delta", "text": tail}
 
         if not calls:
-            body: dict[str, Any] = {"type": "done", "reply": final_reply("".join(pieces), cards)}
+            reply, images = scrub_images(final_reply("".join(pieces), cards), allowed_images)
+            body: dict[str, Any] = {"type": "done", "reply": reply or "Sorry, I could not answer that."}
+            if images:
+                body["images"] = images
             if cards:
                 body["cards"] = cards
             yield body
@@ -111,7 +134,8 @@ async def _converse(
         for call in calls:
             yield {"type": "status", "tool": call.name, "text": status_for(call.name, call.args)}
             try:
-                response, shown = await _run_tool(call, ctx, supports)
+                response, shown, tool_images = await _run_tool(call, ctx, supports)
+                allowed_images.update(tool_images)
             except Exception:
                 logger.exception("Tool %s failed", call.name)
                 response, shown = {"error": "Failed to read data"}, None

@@ -2,59 +2,14 @@ from typing import Any
 
 from app.utils.text import VERIFIED_ROLES, bs_date_text, clean_url, first, norm, to_int
 
-CARD_TYPES = ["people", "notes", "events", "national_days", "posts", "app_update"]
-DEFAULT_SUPPORTED = ["people", "notes"]
+CARD_TYPES = ["events", "national_days", "posts", "app_update"]
+DEFAULT_SUPPORTED: list[str] = []
 
-MAX_CARD_PEOPLE = 12
-MAX_CARD_NOTES = 10
 MAX_CARD_EVENTS = 15
 
 
 def is_verified(role: Any) -> bool:
     return norm(role) in VERIFIED_ROLES
-
-
-def people_card(people: list[dict]) -> dict | None:
-    if not people:
-        return None
-    return {
-        "type": "people",
-        "people": [
-            {
-                "uid": str(u.get("uid") or ""),
-                "name": str(u.get("fullName") or ""),
-                "role": norm(u.get("role")) or "student",
-                "subject": str(u.get("assignedSubject") or ""),
-                "class_level": str(u.get("classLevel") or ""),
-                "section": str(u.get("section") or ""),
-                "photo_url": clean_url(u.get("profileImageUrl")),
-                "verified": is_verified(u.get("role")),
-            }
-            for u in people[:MAX_CARD_PEOPLE]
-        ],
-    }
-
-
-def notes_card(subject_key: str, units: list[dict]) -> dict | None:
-    groups: list[dict] = []
-    total = 0
-    for unit in units:
-        room = MAX_CARD_NOTES - total
-        if room <= 0:
-            break
-        notes = [{**n, "description": n["description"][:2000]} for n in unit["notes"][:room]]
-        total += len(notes)
-        groups.append(
-            {
-                "subject_key": subject_key,
-                "unit_id": unit["unit_id"],
-                "unit_name": unit["unit_name"],
-                "notes": notes,
-            }
-        )
-    if not groups:
-        return None
-    return {"type": "notes", "subject": subject_key, "groups": groups}
 
 
 def time_text(ev: dict) -> str:
@@ -144,10 +99,6 @@ def app_update_card(update: dict | None) -> dict | None:
 
 def intro_for(card: dict) -> str:
     kind = card.get("type")
-    if kind == "people":
-        return "Here is what I found:" if len(card["people"]) == 1 else "Here are the people I found:"
-    if kind == "notes":
-        return f"Here are the notes for {card['subject']}:"
     if kind == "events":
         return "Here are the events I found:"
     if kind == "national_days":

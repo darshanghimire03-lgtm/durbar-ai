@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 
@@ -12,6 +12,7 @@ class ToolResult:
     data: dict[str, Any]
     brief: dict[str, Any] | None = None
     card: dict[str, Any] | None = None
+    images: list[str] = field(default_factory=list)
 
 
 Handler = Callable[[dict[str, Any], ToolContext], Awaitable[ToolResult]]

@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Pushes variables from a local .env file to Vercel (production, preview, development).
-# Usage: vercel login && vercel link && bash scripts/set-vercel-env.sh [.env]
 set -euo pipefail
 FILE="${1:-.env}"
 [ -f "$FILE" ] || { echo "Missing $FILE"; exit 1; }

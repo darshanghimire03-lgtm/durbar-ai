@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, AsyncIterator
 
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
@@ -32,14 +32,14 @@ class ToolResponse:
 
 
 @dataclass
-class StepResult:
+class StreamEvent:
     text: str = ""
-    calls: list[ToolCall] = field(default_factory=list)
+    calls: list[ToolCall] | None = None
 
 
 class ChatSession(ABC):
     @abstractmethod
-    async def step(self) -> StepResult: ...
+    def stream(self) -> AsyncIterator[StreamEvent]: ...
 
     @abstractmethod
     def add_results(self, results: list[ToolResponse]) -> None: ...

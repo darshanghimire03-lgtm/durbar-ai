@@ -9,6 +9,8 @@ BS_MONTHS = [
 EVENT_TYPES = ["exam", "test", "festival", "school_event", "emergency", "vacation"]
 ROLES = ["student", "professor", "captain", "moderator"]
 VERIFIED_ROLES = ["professor", "captain", "moderator"]
+TEACHER_ROLES = ["professor"]
+SPECIAL_ROLES = ["professor", "captain", "moderator"]
 
 
 def norm(value: Any) -> str:
@@ -73,13 +75,3 @@ def bs_date_text(month: Any, day: Any, year: Any = None) -> str:
     if not name or not day:
         return ""
     return f"{name} {day}, {year}" if year else f"{name} {day}"
-
-
-def clean_reply(text: Any) -> str:
-    out = str(text if text is not None else "")
-    out = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"\1: \2", out)
-    out = re.sub(r"\*\*|__", "", out)
-    out = re.sub(r"^#{1,6}\s*", "", out, flags=re.M)
-    out = re.sub(r"^\s*[*•]\s+", "- ", out, flags=re.M)
-    out = re.sub(r"\n{3,}", "\n\n", out)
-    return out.strip()

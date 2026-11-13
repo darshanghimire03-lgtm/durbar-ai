@@ -1,11 +1,12 @@
 import json
-from typing import Any
+from typing import Any, AsyncIterator
 
 from app.config import get_settings
-from app.llm.base import ChatSession, LLMError, StepResult, ToolCall, ToolResponse
+from app.llm.base import ChatSession, LLMError, StreamEvent, ToolCall, ToolResponse
 from app.llm.registry import ModelEntry
-from app.llm.transport import post_json
+from app.llm.transport import stream_sse
 from app.tools import TOOL_DEFINITIONS
+from app.utils.text import to_int
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 MAX_OUTPUT_TOKENS = 4000
@@ -69,7 +70,7 @@ class GeminiSession(ChatSession):
         self.system = system
         self.contents = to_gemini_contents(history, message)
 
-    async def step(self) -> StepResult:
+    async def stream(self) -> AsyncIterator[StreamEvent]:
         payload = {
             "systemInstruction": {"parts": [{"text": self.system}]},
             "contents": self.contents,
@@ -78,30 +79,38 @@ class GeminiSession(ChatSession):
             "generationConfig": {"maxOutputTokens": MAX_OUTPUT_TOKENS},
         }
         headers = {"x-goog-api-key": get_settings().gemini_api_key}
-        res = await post_json(f"{GEMINI_URL}/{self.entry.model}:generateContent", headers, payload, 60)
+        url = f"{GEMINI_URL}/{self.entry.model}:streamGenerateContent?alt=sse"
 
-        if res.status_code != 200:
-            raise LLMError(res.status_code, f"Gemini {res.status_code}: {res.text[:300]}")
+        all_parts: list[dict] = []
+        calls: list[ToolCall] = []
+        async for chunk in stream_sse(url, headers, payload, 90):
+            error = chunk.get("error")
+            if error:
+                code = to_int(error.get("code")) if isinstance(error, dict) else 0
+                detail = error.get("message") if isinstance(error, dict) else error
+                raise LLMError(code or 502, f"Gemini: {str(detail)[:300]}")
+            for candidate in (chunk.get("candidates") or [])[:1]:
+                for part in (candidate.get("content") or {}).get("parts") or []:
+                    if not isinstance(part, dict):
+                        continue
+                    all_parts.append(part)
+                    text = part.get("text")
+                    if isinstance(text, str) and text and not part.get("thought"):
+                        yield StreamEvent(text=text)
+                    elif "functionCall" in part:
+                        fc = part["functionCall"]
+                        calls.append(
+                            ToolCall(
+                                id=fc.get("id") or f"call_{len(calls)}",
+                                api_id=fc.get("id"),
+                                name=fc.get("name") or "",
+                                args=fc.get("args") or {},
+                            )
+                        )
 
-        data = res.json()
-        candidates = data.get("candidates") or [{}]
-        content = candidates[0].get("content") or {}
-        parts = content.get("parts") or []
-
-        text = "".join(p["text"] for p in parts if isinstance(p.get("text"), str) and not p.get("thought"))
-        calls = [
-            ToolCall(
-                id=p["functionCall"].get("id") or f"call_{i}",
-                api_id=p["functionCall"].get("id"),
-                name=p["functionCall"].get("name") or "",
-                args=p["functionCall"].get("args") or {},
-            )
-            for i, p in enumerate(p for p in parts if "functionCall" in p)
-        ]
-
-        if calls and content:
-            self.contents.append({"role": "model", "parts": parts})
-        return StepResult(text=text, calls=calls)
+        if calls:
+            self.contents.append({"role": "model", "parts": all_parts})
+            yield StreamEvent(calls=calls)
 
     def add_results(self, results: list[ToolResponse]) -> None:
         self.contents.append(

@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     default_model: str = ""
 
     firebase_database_url: str = ""
+    firebase_api_key: str = ""
     people_path: str = "users"
+    instructions_path: str = "ai_instructions"
     cache_ms: int = 20000
 
     rate_limit_per_minute: int = 15

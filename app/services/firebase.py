@@ -1,5 +1,4 @@
 import asyncio
-import random
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -7,7 +6,7 @@ from typing import Any
 from app.config import get_settings
 from app.core.http import get_client
 from app.utils.text import (
-    BS_MONTHS, EVENT_TYPES, clean_url, has, match_key, norm, seg, to_int, first,
+    BS_MONTHS, EVENT_TYPES, clean_url, first, has, match_key, norm, seg, to_int,
 )
 
 _cache: dict[str, tuple[float, Any]] = {}
@@ -184,7 +183,10 @@ def _normalize_note(key: str, n: dict) -> dict:
 
 
 async def search_notes(
-    subject: str | None = None, unit_name: str | None = None, keyword: str | None = None
+    subject: str | None = None,
+    unit_name: str | None = None,
+    keyword: str | None = None,
+    full: bool = False,
 ) -> dict:
     subjects = await list_keys("units")
     if not subject:
@@ -199,8 +201,11 @@ async def search_notes(
     if unit_name:
         unit_entries = [(k, u) for k, u in unit_entries if has(u.get("name"), unit_name)]
 
+    unit_cap = None if full else 20
+    note_cap = None if full else 10
+
     units: list[dict] = []
-    for u_key, u in unit_entries[:20]:
+    for u_key, u in unit_entries[:unit_cap]:
         note_entries = [(k, n) for k, n in entries(u.get("notes")) if isinstance(n, dict)]
         if keyword:
             note_entries = [
@@ -212,38 +217,10 @@ async def search_notes(
             {
                 "unit_id": str(u.get("id") or u_key),
                 "unit_name": str(u.get("name") or ""),
-                "notes": [_normalize_note(k, n) for k, n in note_entries[:10]],
+                "notes": [_normalize_note(k, n) for k, n in note_entries[:note_cap]],
             }
         )
     return {"subject_key": key, "unit_names": unit_names, "units": units}
-
-
-async def search_mocks(subject: str | None = None, count: Any = None) -> dict:
-    subjects = await list_keys("mocks")
-    if not subject:
-        return {"subjects": subjects}
-    key = match_key(subjects, subject)
-    if not key:
-        return {"error": "Subject not found", "subjects": subjects}
-
-    data = await db_get(seg("mocks", key, "questions"), use_cache=False)
-    questions = [
-        q for q in arr(data) if isinstance(q, dict) and q.get("question") and isinstance(q.get("options"), list)
-    ]
-    random.shuffle(questions)
-    n = min(max(to_int(count, 5) or 5, 1), 10)
-    return {
-        "subject_key": key,
-        "total_available": len(questions),
-        "questions": [
-            {
-                "question": str(q["question"]),
-                "options": [str(o) for o in q["options"]],
-                "answer_index": to_int(q.get("answerIndex"), -1),
-            }
-            for q in questions[:n]
-        ],
-    }
 
 
 async def get_app_update() -> dict | None:
@@ -264,6 +241,39 @@ async def load_people() -> list[dict]:
     return [
         {**u, "uid": u.get("uid") or key} for key, u in entries(data) if isinstance(u, dict)
     ]
+
+
+async def get_person(uid: str) -> dict | None:
+    if not uid or len(uid) > 128:
+        return None
+    data = await db_get(f"{get_settings().people_path.strip('/')}/{seg(uid)}")
+    return {**data, "uid": uid} if isinstance(data, dict) else None
+
+
+def _flatten(node: Any) -> list[str]:
+    if isinstance(node, str):
+        return [node.strip()] if node.strip() else []
+    if isinstance(node, dict):
+        if node.get("active") is False:
+            return []
+        if "text" in node:
+            return _flatten(node["text"])
+        return [line for _, v in entries(node) for line in _flatten(v)]
+    if isinstance(node, list):
+        return [line for v in node for line in _flatten(v)]
+    return []
+
+
+async def get_ai_instructions() -> str:
+    path = get_settings().instructions_path.strip("/")
+    if not path:
+        return ""
+    try:
+        data = await db_get(path)
+    except Exception:
+        return ""
+    lines = _flatten(data)[:20]
+    return "\n".join(f"- {line[:400]}" for line in lines)[:3000]
 
 
 async def search_people(

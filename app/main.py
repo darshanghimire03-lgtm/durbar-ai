@@ -27,6 +27,8 @@ async def lifespan(_: FastAPI):
     logger.info("Durbar AI %s started. Models: %s", __version__, names)
     if not settings.firebase_database_url:
         logger.warning("FIREBASE_DATABASE_URL is not set; app data tools will fail")
+    elif not settings.firebase_api_key:
+        logger.warning("FIREBASE_API_KEY is not set; the user id sent by the app is trusted without a token check")
     yield
     await close_client()
 

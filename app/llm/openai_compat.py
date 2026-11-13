@@ -1,10 +1,10 @@
 import json
-from typing import Any
+from typing import Any, AsyncIterator
 
 from app.config import get_settings
-from app.llm.base import ChatSession, LLMError, StepResult, ToolCall, ToolResponse
+from app.llm.base import ChatSession, LLMError, StreamEvent, ToolCall, ToolResponse
 from app.llm.registry import ModelEntry
-from app.llm.transport import post_json
+from app.llm.transport import stream_sse
 from app.tools import TOOL_DEFINITIONS
 from app.utils.text import to_int
 
@@ -39,6 +39,7 @@ class OpenAICompatSession(ChatSession):
             "tools": TOOL_DEFINITIONS,
             "tool_choice": "auto",
             "max_tokens": 2500,
+            "stream": True,
         }
         if self.entry.provider == "groq":
             body["temperature"] = 0.1
@@ -54,49 +55,72 @@ class OpenAICompatSession(ChatSession):
         }
         return OPENROUTER_URL, headers, body, 90
 
-    async def step(self) -> StepResult:
+    async def stream(self) -> AsyncIterator[StreamEvent]:
         url, headers, body, timeout = self._request()
         label = f"{self.entry.provider} {self.entry.model}"
-        res = await post_json(url, headers, body, timeout)
 
-        try:
-            data = res.json()
-        except ValueError:
-            data = None
+        text_parts: list[str] = []
+        slots: dict[int, dict[str, str]] = {}
+        reasoning: list[Any] = []
 
-        if res.status_code != 200 or not isinstance(data, dict) or data.get("error"):
-            error = data.get("error") if isinstance(data, dict) else None
-            detail = (error.get("message") if isinstance(error, dict) else error) or f"status {res.status_code}"
-            status = res.status_code if res.status_code != 200 else (to_int(error.get("code") if isinstance(error, dict) else 0) or 502)
-            raise LLMError(status, f"{label}: {str(detail)[:300]}")
+        async for chunk in stream_sse(url, headers, body, timeout):
+            error = chunk.get("error")
+            if error:
+                detail = error.get("message") if isinstance(error, dict) else error
+                code = to_int(error.get("code") if isinstance(error, dict) else 0) or 502
+                raise LLMError(code, f"{label}: {str(detail)[:300]}")
 
-        choices = data.get("choices") or []
-        message = choices[0].get("message") if choices else None
-        if not isinstance(message, dict):
-            raise LLMError(502, f"{label}: empty response")
+            choices = chunk.get("choices") or []
+            if not choices:
+                continue
+            delta = choices[0].get("delta") or {}
 
-        raw_calls = message.get("tool_calls") or []
-        calls = [
-            ToolCall(
-                id=c.get("id") or f"call_{i}",
-                name=(c.get("function") or {}).get("name") or "",
-                args=_parse_args((c.get("function") or {}).get("arguments")),
-            )
-            for i, c in enumerate(raw_calls)
-        ]
+            content = delta.get("content")
+            if isinstance(content, str) and content:
+                text_parts.append(content)
+                yield StreamEvent(text=content)
 
-        if calls:
+            for tc in delta.get("tool_calls") or []:
+                slot = slots.setdefault(to_int(tc.get("index")), {"id": "", "name": "", "arguments": ""})
+                if tc.get("id"):
+                    slot["id"] = tc["id"]
+                fn = tc.get("function") or {}
+                if fn.get("name") and not slot["name"]:
+                    slot["name"] = fn["name"]
+                if fn.get("arguments"):
+                    slot["arguments"] += fn["arguments"]
+
+            details = delta.get("reasoning_details")
+            if isinstance(details, list):
+                reasoning.extend(details)
+
+        if slots:
+            raw_calls = [
+                {
+                    "id": slot["id"] or f"call_{i}",
+                    "type": "function",
+                    "function": {"name": slot["name"], "arguments": slot["arguments"] or "{}"},
+                }
+                for i, slot in enumerate(slots[k] for k in sorted(slots))
+            ]
             assistant: dict[str, Any] = {
                 "role": "assistant",
-                "content": message.get("content") or "",
-                "tool_calls": [{**c, "id": c.get("id") or f"call_{i}"} for i, c in enumerate(raw_calls)],
+                "content": "".join(text_parts),
+                "tool_calls": raw_calls,
             }
-            if message.get("reasoning_details"):
-                assistant["reasoning_details"] = message["reasoning_details"]
+            if reasoning:
+                assistant["reasoning_details"] = reasoning
             self.messages.append(assistant)
-
-        content = message.get("content")
-        return StepResult(text=content if isinstance(content, str) else "", calls=calls)
+            yield StreamEvent(
+                calls=[
+                    ToolCall(
+                        id=c["id"],
+                        name=c["function"]["name"],
+                        args=_parse_args(c["function"]["arguments"]),
+                    )
+                    for c in raw_calls
+                ]
+            )
 
     def add_results(self, results: list[ToolResponse]) -> None:
         for r in results:

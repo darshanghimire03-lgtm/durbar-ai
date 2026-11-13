@@ -12,7 +12,6 @@ class ToolResult:
     data: dict[str, Any]
     brief: dict[str, Any] | None = None
     card: dict[str, Any] | None = None
-    table: dict[str, Any] | None = None
 
 
 Handler = Callable[[dict[str, Any], ToolContext], Awaitable[ToolResult]]

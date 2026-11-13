@@ -7,7 +7,6 @@ _loop: asyncio.AbstractEventLoop | None = None
 
 
 def get_client() -> httpx.AsyncClient:
-    """Shared HTTP client. Rebuilt if the event loop changes (serverless-safe)."""
     global _client, _loop
     loop = asyncio.get_running_loop()
     if _client is None or _client.is_closed or _loop is not loop:

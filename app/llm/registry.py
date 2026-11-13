@@ -16,20 +16,12 @@ def all_models() -> list[ModelEntry]:
     return [
         ModelEntry("groq-gpt-oss-120b", "Groq GPT-OSS 120B", "groq", get_settings().groq_model,
                    "Fast open model running on Groq"),
-        ModelEntry("gemini-flash-lite-latest", "Gemini Flash-Lite (Latest)", "gemini",
-                   "gemini-flash-lite-latest", "Always points to the newest Flash-Lite"),
         ModelEntry("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite", "gemini",
                    "gemini-3.5-flash-lite", "Fastest and cheapest Gemini 3.5"),
         ModelEntry("gemini-3.6-flash", "Gemini 3.6 Flash", "gemini",
                    "gemini-3.6-flash", "Smarter Gemini for harder questions"),
-        ModelEntry("or-nemotron-3.5-super-vl", "NVIDIA Nemotron 3.5 Super VL (Free)", "openrouter",
-                   "nvidia/nemotron-3.5-super-vl:free", "Large reasoning model with 1M context, via OpenRouter"),
-        ModelEntry("or-flint", "Recursive Flint (Free)", "openrouter",
-                   "recursive/flint-v1.0:free", "Reasoning and tool use model, via OpenRouter"),
         ModelEntry("or-gemma-4-26b", "Google Gemma 4 26B A4B (Free)", "openrouter",
                    "google/gemma-4-26b-a4b-it:free", "Balanced Gemma model, via OpenRouter"),
-        ModelEntry("or-lfm-2.5-2.6b", "LiquidAI LFM2.5 2.6B (Free)", "openrouter",
-                   "liquid/lfm-2.5-2.6b:free", "Very small and fast, simple questions only, via OpenRouter"),
     ]
 
 

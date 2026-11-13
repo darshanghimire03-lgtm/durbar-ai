@@ -15,7 +15,6 @@ _last_cleanup = 0.0
 
 
 def client_ip(request: Request) -> str:
-    """Real client IP behind Vercel's proxy (falls back to the socket address)."""
     h = request.headers
     for name in ("x-vercel-forwarded-for", "x-real-ip"):
         value = h.get(name)
@@ -62,7 +61,7 @@ async def _redis_count(key: str) -> int | None:
         )
         res.raise_for_status()
         return int(res.json()[0]["result"])
-    except Exception as exc:  # never block users because Redis is down
+    except Exception as exc:
         logger.warning("Redis rate limit unavailable (%s); using in-memory", type(exc).__name__)
         return None
 

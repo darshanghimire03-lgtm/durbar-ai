@@ -1,9 +1,8 @@
 from typing import Any
 
-from app.utils.tables import build_table
 from app.utils.text import VERIFIED_ROLES, bs_date_text, clean_url, first, norm, to_int
 
-CARD_TYPES = ["people", "notes", "events", "national_days", "mock", "posts", "app_update", "table"]
+CARD_TYPES = ["people", "notes", "events", "national_days", "posts", "app_update"]
 DEFAULT_SUPPORTED = ["people", "notes"]
 
 MAX_CARD_PEOPLE = 12
@@ -31,7 +30,7 @@ def people_card(people: list[dict]) -> dict | None:
                 "photo_url": clean_url(u.get("profileImageUrl")),
                 "verified": is_verified(u.get("role")),
             }
-            for u in people
+            for u in people[:MAX_CARD_PEOPLE]
         ],
     }
 
@@ -125,52 +124,6 @@ def national_days_card(days: list[dict]) -> dict | None:
     }
 
 
-def mock_card(subject_key: str, questions: list[dict]) -> dict | None:
-    if not questions:
-        return None
-    return {
-        "type": "mock",
-        "subject": subject_key,
-        "questions": [
-            {
-                "number": i + 1,
-                "question": str(q["question"]),
-                "options": [str(o) for o in q["options"]],
-            }
-            for i, q in enumerate(questions)
-        ],
-    }
-
-
-def events_table(events: list[dict]) -> dict | None:
-    return build_table(
-        "Events",
-        ["No", "Type", "Title", "Subject", "Date", "Time"],
-        [
-            [
-                i + 1,
-                ev.get("event_type"),
-                ev.get("title") or "",
-                ev.get("subject") or subjects_text(ev),
-                event_date_text(ev),
-                time_text(ev),
-            ]
-            for i, ev in enumerate(events)
-        ],
-    )
-
-
-def national_days_table(days: list[dict]) -> dict | None:
-    return build_table(
-        "National days",
-        ["No", "Title", "Date", "Description"],
-        [
-            [i + 1, n.get("title"), bs_date_text(n.get("month"), n.get("day")), n.get("description")]
-            for i, n in enumerate(days)
-        ],
-    )
-
-
 def posts_card(posts: list[dict]) -> dict | None:
     if not posts:
         return None
@@ -199,12 +152,8 @@ def intro_for(card: dict) -> str:
         return "Here are the events I found:"
     if kind == "national_days":
         return "Here are the national days:"
-    if kind == "mock":
-        return f"Here are the mock questions for {card['subject']}:"
     if kind == "posts":
         return "Here are the latest posts:"
     if kind == "app_update":
         return "Here is the latest app update:"
-    if kind == "table":
-        return f"Here is the table: {card['title']}" if card.get("title") else "Here is the table:"
     return "Here you go:"
